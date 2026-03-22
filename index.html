@@ -1330,11 +1330,43 @@ function ManualModal({ onClose }) {
             <div style={{fontWeight:700,fontSize:17,color:"#fff"}}>❓ 操作マニュアル</div>
             <div style={{fontSize:11.5,color:"rgba(255,255,255,.6)",marginTop:2}}>SHIFTMGR — HOTEL ELDIA 神戸店</div>
           </div>
-          <button onClick={onClose} style={{marginLeft:"auto",background:"rgba(255,255,255,.15)",border:"none",color:"#fff",width:32,height:32,borderRadius:8,cursor:"pointer",fontSize:18,display:"flex",alignItems:"center",justifyContent:"center"}}>×</button>
+          <div style={{marginLeft:"auto",display:"flex",gap:8,alignItems:"center"}}>
+            <button onClick={()=>{
+              const win=window.open("","_blank","width=800,height:1000");
+              const body=document.getElementById("__manual_content__");
+              win.document.write(`<!DOCTYPE html>
+<html lang="ja"><head><meta charset="UTF-8">
+<title>操作マニュアル — HOTEL ELDIA 神戸店</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@300;400;500;700&display=swap">
+<style>
+@page{size:A4 portrait;margin:0}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Noto Sans JP',sans-serif;padding:10mm;background:#fff;font-size:9pt}
+h1{font-size:14pt;font-weight:700;color:#0f2044;margin-bottom:2mm}
+.sub{font-size:8pt;color:#64748b;margin-bottom:5mm}
+.section{margin-bottom:6mm;break-inside:avoid}
+.sec-title{font-size:10pt;font-weight:700;color:#0f2044;border-bottom:1pt solid #0f2044;padding-bottom:1.5mm;margin-bottom:3mm;display:flex;align-items:center;gap:4pt}
+.row{display:flex;gap:8pt;padding:3pt 6pt;background:#f8faff;border-radius:3pt;margin-bottom:2pt;border:0.5pt solid #e2e8f0;break-inside:avoid}
+.term{font-weight:700;font-size:8.5pt;color:#0f2044;min-width:90pt;flex-shrink:0}
+.desc{font-size:8.5pt;color:#475569;line-height:1.5}
+.footer{text-align:center;font-size:7pt;color:#94a3b8;margin-top:5mm;border-top:0.5pt solid #e2e8f0;padding-top:3mm}
+</style></head><body>
+<h1>❓ 操作マニュアル</h1>
+<div class="sub">SHIFTMGR — HOTEL ELDIA 神戸店</div>
+${body ? body.innerHTML : ""}
+<div class="footer">SHIFTMGR for HOTEL ELDIA 神戸店 — 作成: Claude (Anthropic)</div>
+</body></html>`);
+              win.document.close();
+              setTimeout(()=>{ win.print(); setTimeout(()=>win.close(),1000); },600);
+            }} style={{background:"#c9a84c",color:"#0f2044",border:"none",padding:"5px 14px",borderRadius:7,cursor:"pointer",fontWeight:700,fontSize:12.5,fontFamily:"'Noto Sans JP',sans-serif",display:"flex",alignItems:"center",gap:5}}>
+              🖨 印刷
+            </button>
+            <button onClick={onClose} style={{background:"rgba(255,255,255,.15)",border:"none",color:"#fff",width:32,height:32,borderRadius:8,cursor:"pointer",fontSize:18,display:"flex",alignItems:"center",justifyContent:"center"}}>×</button>
+          </div>
         </div>
 
         {/* Content */}
-        <div style={{padding:"20px 24px",overflowY:"auto"}}>
+        <div id="__manual_content__" style={{padding:"20px 24px",overflowY:"auto"}}>
           {sections.map((sec,si)=>(
             <div key={si} style={{marginBottom:24}}>
               <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:12,paddingBottom:8,borderBottom:"2px solid #e2e8f0"}}>
@@ -1416,7 +1448,7 @@ ${pw.innerHTML}
     const isLS=fmt.includes("landscape");
     const cellW=isLS?"17pt":"21pt";
     const nameW=isLS?"42pt":"46pt";
-    function PT({dates}){
+    function PT({dates, deptIds=null}){
       const fs = isLS ? "7.5pt" : "8pt";
       const fsTime = isLS ? "7pt" : "7.5pt";
       return(
@@ -1455,7 +1487,7 @@ ${pw.innerHTML}
             <th style={{background:"#000",color:"#fff",padding:"4pt 2pt",width:"24pt",fontSize:"7pt",borderLeft:"1.5pt solid #000",border:"0.5pt solid #000",textAlign:"center"}}>計</th>
           </tr></thead>
           <tbody>
-            {staffByDept.map(dept=>{
+            {staffByDept.filter(dept=>!deptIds||deptIds.includes(dept.id)).map(dept=>{
               if(dept.members.length===0) return null;
               return[
                 <tr key={`d-${dept.id}`}>
@@ -1545,23 +1577,55 @@ ${pw.innerHTML}
         </table>
       );
     }
-    const printContent=fmt==="monthly-portrait"?(
-      [monthDates.slice(0,15),monthDates.slice(15)].map((chunk,ci)=>(
-        <div key={ci} style={{width:"210mm",minHeight:"297mm",padding:"7mm",background:"#fff",pageBreakAfter:"always",boxSizing:"border-box",fontFamily:"'Noto Sans JP',sans-serif"}}>
-          <div style={{display:"flex",alignItems:"center",marginBottom:"4pt",borderBottom:"0.5pt solid #ccc",paddingBottom:"3pt"}}>
-            <span style={{flex:1,fontSize:"9.5pt",fontWeight:700,color:"#000"}}>
-              {year}年 {month+1}月 シフト表&nbsp;&nbsp;{chunk[0].getDate()}日〜{chunk[chunk.length-1].getDate()}日
-            </span>
-            <span style={{flex:1,textAlign:"center",fontSize:"11pt",fontWeight:900,color:"#000",letterSpacing:".05em"}}>
-              HOTEL ELDIA 神戸店
-            </span>
-            <span style={{flex:1,textAlign:"right",fontSize:"6.5pt",color:"#555"}}>
-              出力日: {new Date().toLocaleDateString("ja-JP")}
-            </span>
-          </div>
-          <PT dates={chunk}/>
+    function PageHdr({label}){
+      return(
+        <div style={{display:"flex",alignItems:"center",marginBottom:"4pt",borderBottom:"0.5pt solid #ccc",paddingBottom:"3pt"}}>
+          <span style={{flex:1,fontSize:"9.5pt",fontWeight:700,color:"#000"}}>{label}</span>
+          <span style={{flex:1,textAlign:"center",fontSize:"11pt",fontWeight:900,color:"#000",letterSpacing:".05em"}}>HOTEL ELDIA 神戸店</span>
+          <span style={{flex:1,textAlign:"right",fontSize:"6.5pt",color:"#555"}}>出力日: {new Date().toLocaleDateString("ja-JP")}</span>
         </div>
-      ))
+      );
+    }
+    const half1=monthDates.slice(0,15);
+    const half2=monthDates.slice(15);
+    const printContent=fmt==="monthly-portrait"?(
+      // 元の設定: 全部門を15日ずつ2枚
+      <>
+        {[half1,half2].map((chunk,ci)=>(
+          <div key={ci} style={{width:"210mm",minHeight:"297mm",padding:"7mm",background:"#fff",pageBreakAfter:"always",boxSizing:"border-box",fontFamily:"'Noto Sans JP',sans-serif"}}>
+            <PageHdr label={`${year}年 ${month+1}月 シフト表　${chunk[0].getDate()}日〜${chunk[chunk.length-1].getDate()}日`}/>
+            <PT dates={chunk}/>
+          </div>
+        ))}
+      </>
+    ):fmt==="monthly-dept"?(
+      // 新設定: 部門別×半月 = 計4枚
+      // P1: メイク 1〜15日
+      // P2: メイク 16〜末日
+      // P3: キッチン+フロント 1〜15日
+      // P4: キッチン+フロント 16〜末日
+      <>
+        {[["make","メイク"],[["kitchen","front"],"キッチン・フロント"]].map(([dids,dlabel])=>(
+          [half1,half2].map((chunk,ci)=>(
+            <div key={`${dlabel}-${ci}`} style={{width:"210mm",minHeight:"297mm",padding:"7mm",background:"#fff",pageBreakAfter:"always",boxSizing:"border-box",fontFamily:"'Noto Sans JP',sans-serif"}}>
+              <PageHdr label={`${year}年 ${month+1}月 シフト表　${dlabel}　${chunk[0].getDate()}日〜${chunk[chunk.length-1].getDate()}日`}/>
+              <PT dates={chunk} deptIds={Array.isArray(dids)?dids:[dids]}/>
+            </div>
+          ))
+        ))}
+      </>
+    ):fmt==="monthly-dept-landscape"?(
+      // 部門別×半月×A4横 = 計4枚
+      <>
+        {[["make","メイク"],[["kitchen","front"],"キッチン・フロント"]].map(([dids,dlabel])=>(
+          [half1,half2].map((chunk,ci)=>(
+            <div key={`${dlabel}-${ci}`} style={{width:"297mm",minHeight:"210mm",padding:"6mm",background:"#fff",pageBreakAfter:"always",boxSizing:"border-box",fontFamily:"'Noto Sans JP',sans-serif"}}>
+              <PageHdr label={`${year}年 ${month+1}月 シフト表　${dlabel}　${chunk[0].getDate()}日〜${chunk[chunk.length-1].getDate()}日`}/>
+              <PT dates={chunk} deptIds={Array.isArray(dids)?dids:[dids]}/>
+            </div>
+          ))
+        ))}
+      </>
     ):(
       <div style={{width:isLS?"297mm":"210mm",minHeight:isLS?"210mm":"297mm",padding:"6mm",background:"#fff",boxSizing:"border-box",fontFamily:"'Noto Sans JP',sans-serif"}}>
         <div style={{display:"flex",alignItems:"center",marginBottom:"4pt",borderBottom:"0.5pt solid #ccc",paddingBottom:"3pt"}}>
@@ -1593,8 +1657,8 @@ ${pw.innerHTML}
               <div style={{fontWeight:700,fontSize:16,color:"#0f2044"}}>🖨 印刷・PDF出力</div>
               <button onClick={onClose} style={{marginLeft:"auto",background:"none",border:"none",fontSize:20,color:"#94a3b8",cursor:"pointer"}}>×</button>
             </div>
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:20}}>
-              {[["weekly-portrait","📄","週表示 A4縦","紙と同じ形式"],["weekly-landscape","📋","週表示 A4横","横並び"],["monthly-portrait","📄","月表示 A4縦×2","15日ずつ2枚"],["monthly-landscape","📋","月表示 A4横","全月1枚"]].map(([v,ic,l,s])=>(
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:20}}>
+              {[["weekly-portrait","📄","週表示 A4縦","紙と同じ形式"],["weekly-landscape","📋","週表示 A4横","横並び"],["monthly-portrait","📄","月表示 A4縦×2","全部門 15日×2枚"],["monthly-dept","📄","月表示 部門別×4枚","メイク2枚+厨房FL2枚"],["monthly-dept-landscape","📋","月表示 部門別×4枚(横)","メイク前後半+厨房FL前後半"],["monthly-landscape","📋","月表示 A4横","全月1枚"]].map(([v,ic,l,s])=>(
                 <button key={v} onClick={()=>setFmt(v)} style={{padding:"10px 12px",borderRadius:8,cursor:"pointer",fontFamily:"'Noto Sans JP',sans-serif",fontSize:12.5,fontWeight:700,border:`2px solid ${fmt===v?"#c9a84c":"#dde3ef"}`,background:fmt===v?"#fffbf0":"#fff",color:fmt===v?"#0f2044":"#64748b",display:"flex",alignItems:"center",gap:8,textAlign:"left"}}>
                   <span style={{fontSize:22}}>{ic}</span>
                   <div><div>{l}</div><div style={{fontSize:10,fontWeight:400,color:"#94a3b8"}}>{s}</div></div>
