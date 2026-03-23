@@ -1127,6 +1127,8 @@ function ShiftApp() {
   const [showInactive,setShowInactive]=useState(false);
   const [showPrint,setShowPrint]=useState(false);
   const [showManual,setShowManual]=useState(false);
+  const dragStaffId = useRef(null);
+  const [dragOverId,setDragOverId]=useState(null);
   const nextId=useRef(400);
 
   // Supabase からデータをロード
@@ -1211,6 +1213,45 @@ function ShiftApp() {
 
   function updateStaff(id,fn){setStaff(p=>p.map(s=>s.id===id?fn(s):s));}
 
+  // 同部署内でスタッフを上下移動して no を振り直す
+  function moveStaff(id, dir) {
+    setStaff(prev => {
+      const s = prev.find(x=>x.id===id);
+      if (!s) return prev;
+      const deptStaff = prev.filter(x=>x.deptId===s.deptId).sort((a,b)=>a.no-b.no);
+      const idx = deptStaff.findIndex(x=>x.id===id);
+      const newIdx = idx + dir;
+      if (newIdx < 0 || newIdx >= deptStaff.length) return prev;
+      const newOrder = [...deptStaff];
+      [newOrder[idx], newOrder[newIdx]] = [newOrder[newIdx], newOrder[idx]];
+      const noMap = {};
+      newOrder.forEach((x,i) => noMap[x.id] = i+1);
+      return prev.map(x => x.deptId===s.deptId ? {...x, no:noMap[x.id]} : x);
+    });
+  }
+
+  // D&D: ドロップ時に同部署内で並び替え
+  function handleDrop(targetId) {
+    const fromId = dragStaffId.current;
+    if (!fromId || fromId===targetId) { setDragOverId(null); return; }
+    setStaff(prev => {
+      const from = prev.find(x=>x.id===fromId);
+      const to   = prev.find(x=>x.id===targetId);
+      if (!from||!to||from.deptId!==to.deptId) return prev;
+      const deptStaff = prev.filter(x=>x.deptId===from.deptId).sort((a,b)=>a.no-b.no);
+      const fromIdx = deptStaff.findIndex(x=>x.id===fromId);
+      const toIdx   = deptStaff.findIndex(x=>x.id===targetId);
+      const newOrder = [...deptStaff];
+      newOrder.splice(fromIdx,1);
+      newOrder.splice(toIdx,0,from);
+      const noMap = {};
+      newOrder.forEach((x,i) => noMap[x.id] = i+1);
+      return prev.map(x => x.deptId===from.deptId ? {...x, no:noMap[x.id]} : x);
+    });
+    dragStaffId.current=null;
+    setDragOverId(null);
+  }
+
   function addStaff(){
     if(!newStaff.name.trim())return;
     const maxNo=staff.filter(s=>s.deptId===newStaff.deptId).reduce((m,s)=>Math.max(m,s.no),0);
@@ -1235,7 +1276,7 @@ function ShiftApp() {
     if (year === leaveYear && month <= leaveMonth) return true;
     return false; // 翌月以降は非表示
   }),[staff,showInactive,year,month]);
-  const staffByDept=useMemo(()=>depts.map(d=>({...d,members:visibleStaff.filter(s=>s.deptId===d.id)})),[depts,visibleStaff]);
+  const staffByDept=useMemo(()=>depts.map(d=>({...d,members:[...visibleStaff.filter(s=>s.deptId===d.id)].sort((a,b)=>a.no-b.no)})),[depts,visibleStaff]);
 
   // Monthly summary
   // 休憩控除: 実労6.5h以上の場合は1h引く
@@ -2008,10 +2049,18 @@ ${pw.innerHTML}
               return(
                 <div key={dept.id} style={{marginBottom:18}}>
                   <span style={{fontSize:13,fontWeight:700,color:dc.color,background:dc.bg,padding:"3px 12px",borderRadius:8,border:`1px solid ${dc.color}`,display:"inline-block",marginBottom:8}}>{dept.label}</span>
-                  {staff.filter(s=>s.deptId===dept.id).map(s=>{
+                  {[...staff.filter(s=>s.deptId===dept.id)].sort((a,b)=>a.no-b.no).map(s=>{
                     const isOpen=openStaffId===s.id;
                     return(
-                      <div key={s.id} className="staff-card">
+                      <div key={s.id} className="staff-card"
+                        draggable
+                        onDragStart={()=>{dragStaffId.current=s.id;}}
+                        onDragOver={e=>{e.preventDefault();setDragOverId(s.id);}}
+                        onDragLeave={()=>setDragOverId(null)}
+                        onDrop={()=>handleDrop(s.id)}
+                        style={{opacity:dragStaffId.current===s.id?.4:1,
+                          outline:dragOverId===s.id?"2px dashed #c9a84c":"none",
+                          outlineOffset:2,transition:"outline .1s"}}>
                         <div className={`staff-card-hdr${isOpen?" open":""}`} onClick={()=>setOpenStaffId(isOpen?null:s.id)}>
                           <span style={{fontSize:10,color:isOpen?"rgba(255,255,255,.4)":"#94a3b8",minWidth:16}}>{s.no}</span>
                           <span style={{fontSize:14,fontWeight:700,textDecoration:!s.active?"line-through":"none"}}>{s.name}</span>
@@ -2020,7 +2069,13 @@ ${pw.innerHTML}
                           {s.timeBlocks.length>0&&<span style={{fontSize:9.5,color:isOpen?"rgba(255,255,255,.7)":"#0f766e",background:isOpen?"rgba(255,255,255,.1)":"#ccfbf1",padding:"1px 6px",borderRadius:5}}>⏱ {s.timeBlocks.length}個人</span>}
                           {/* Pattern count */}
                           {s.patterns.length>0&&<span style={{fontSize:9.5,color:isOpen?"rgba(255,255,255,.7)":"#6d28d9",background:isOpen?"rgba(255,255,255,.1)":"#ede9fe",padding:"1px 6px",borderRadius:5}}>📅 {s.patterns.length}パターン</span>}
-                          <span style={{marginLeft:"auto",fontSize:11,opacity:.4}}>{isOpen?"▲":"▼"}</span>
+                          {/* 並び替えボタン */}
+                          <div style={{marginLeft:"auto",display:"flex",gap:3,alignItems:"center"}} onClick={e=>e.stopPropagation()}>
+                            <span style={{fontSize:14,color:isOpen?"rgba(255,255,255,.5)":"#cbd5e1",cursor:"grab",padding:"0 4px",userSelect:"none"}} title="ドラッグで並び替え">⠿</span>
+                            <button onClick={()=>moveStaff(s.id,-1)} style={{background:isOpen?"rgba(255,255,255,.2)":"#e8ecf5",border:"none",borderRadius:4,width:22,height:22,cursor:"pointer",fontSize:12,color:isOpen?"#fff":"#475569",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>↑</button>
+                            <button onClick={()=>moveStaff(s.id,1)} style={{background:isOpen?"rgba(255,255,255,.2)":"#e8ecf5",border:"none",borderRadius:4,width:22,height:22,cursor:"pointer",fontSize:12,color:isOpen?"#fff":"#475569",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>↓</button>
+                            <span style={{fontSize:11,opacity:.4,marginLeft:4}}>{isOpen?"▲":"▼"}</span>
+                          </div>
                         </div>
                         {isOpen&&(
                           <div>
