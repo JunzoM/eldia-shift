@@ -1398,6 +1398,7 @@ ${body ? body.innerHTML : ""}
   // ─── Print ────────────────────────────────────────────────────────────────
   function PrintModal({onClose}){
     const [fmt,setFmt]=useState("weekly-portrait");
+    const [halfSel,setHalfSel]=useState("both"); // "both"|"first"|"second"
     function doPrint(){
       const pw = document.getElementById("__pw__");
       if (!pw) return;
@@ -1471,15 +1472,15 @@ ${pw.innerHTML}
               const isSun=dow===0; const isSat=dow===6;
               return(
                 <th key={d.toISOString()} style={{
-                  padding:"4pt 0",textAlign:"center",
+                  padding:"3pt 0",textAlign:"center",
                   background: tod?"#000": isSun?"#555": isSat?"#888":"#000",
                   color:"#fff",
-                  fontSize:"5.5pt",fontWeight:700,
+                  fontSize:"8pt",fontWeight:700,
                   border:"0.5pt solid #000",width:cellW,
                   borderBottom: isSun||isSat ? "2pt solid #fff" : "0.5pt solid #000",
                 }}>
                   <div style={{fontWeight:900}}>{viewMode==="weekly"?`${d.getMonth()+1}/${d.getDate()}`:d.getDate()}</div>
-                  <div style={{fontSize:"5pt",opacity:.85}}>{isSun?"㊐":isSat?"㊏":JP_WD[dow]}</div>
+                  <div style={{fontSize:"6.5pt",opacity:.85}}>{isSun?"㊐":isSat?"㊏":JP_WD[dow]}</div>
                 </th>
               );
             })}
@@ -1588,10 +1589,11 @@ ${pw.innerHTML}
     }
     const half1=monthDates.slice(0,15);
     const half2=monthDates.slice(15);
+    const selectedChunks = halfSel==="first"?[half1]:halfSel==="second"?[half2]:[half1,half2];
     const printContent=fmt==="monthly-portrait"?(
       // 元の設定: 全部門を15日ずつ2枚
       <>
-        {[half1,half2].map((chunk,ci)=>(
+        {selectedChunks.map((chunk,ci)=>(
           <div key={ci} style={{width:"210mm",minHeight:"297mm",padding:"7mm",background:"#fff",pageBreakAfter:"always",boxSizing:"border-box",fontFamily:"'Noto Sans JP',sans-serif"}}>
             <PageHdr label={`${year}年 ${month+1}月 シフト表　${chunk[0].getDate()}日〜${chunk[chunk.length-1].getDate()}日`}/>
             <PT dates={chunk}/>
@@ -1606,7 +1608,7 @@ ${pw.innerHTML}
       // P4: キッチン+フロント 16〜末日
       <>
         {[["make","メイク"],[["kitchen","front"],"キッチン・フロント"]].map(([dids,dlabel])=>(
-          [half1,half2].map((chunk,ci)=>(
+          selectedChunks.map((chunk,ci)=>(
             <div key={`${dlabel}-${ci}`} style={{width:"210mm",minHeight:"297mm",padding:"7mm",background:"#fff",pageBreakAfter:"always",boxSizing:"border-box",fontFamily:"'Noto Sans JP',sans-serif"}}>
               <PageHdr label={`${year}年 ${month+1}月 シフト表　${dlabel}　${chunk[0].getDate()}日〜${chunk[chunk.length-1].getDate()}日`}/>
               <PT dates={chunk} deptIds={Array.isArray(dids)?dids:[dids]}/>
@@ -1618,7 +1620,7 @@ ${pw.innerHTML}
       // 部門別×半月×A4横 = 計4枚
       <>
         {[["make","メイク"],[["kitchen","front"],"キッチン・フロント"]].map(([dids,dlabel])=>(
-          [half1,half2].map((chunk,ci)=>(
+          selectedChunks.map((chunk,ci)=>(
             <div key={`${dlabel}-${ci}`} style={{width:"297mm",minHeight:"210mm",padding:"6mm",background:"#fff",pageBreakAfter:"always",boxSizing:"border-box",fontFamily:"'Noto Sans JP',sans-serif"}}>
               <PageHdr label={`${year}年 ${month+1}月 シフト表　${dlabel}　${chunk[0].getDate()}日〜${chunk[chunk.length-1].getDate()}日`}/>
               <PT dates={chunk} deptIds={Array.isArray(dids)?dids:[dids]}/>
@@ -1671,6 +1673,24 @@ ${pw.innerHTML}
                 <div style={{width:SW,height:SH,transform:`scale(${SC})`,transformOrigin:"top left",fontFamily:"'Noto Sans JP',sans-serif",pointerEvents:"none"}}>{printContent}</div>
               </div>
             </div>
+            {/* 月表示の前半/後半セレクター */}
+            {(fmt.includes("monthly"))&&(
+              <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:16,padding:"10px 14px",background:"#f8faff",borderRadius:8,border:"1px solid #e2e8f0"}}>
+                <span style={{fontSize:12.5,fontWeight:700,color:"#0f2044",flexShrink:0}}>印刷範囲：</span>
+                <div style={{display:"flex",gap:6}}>
+                  {[["both","前半+後半（両方）"],["first","前半のみ（1〜15日）"],["second","後半のみ（16日〜末日）"]].map(([v,l])=>(
+                    <button key={v} onClick={()=>setHalfSel(v)} style={{
+                      padding:"5px 12px",borderRadius:7,cursor:"pointer",
+                      border:`1.5px solid ${halfSel===v?"#0f2044":"#dde3ef"}`,
+                      background:halfSel===v?"#0f2044":"#fff",
+                      color:halfSel===v?"#fff":"#475569",
+                      fontSize:12,fontWeight:halfSel===v?700:400,
+                      fontFamily:"'Noto Sans JP',sans-serif",transition:"all .15s",
+                    }}>{l}</button>
+                  ))}
+                </div>
+              </div>
+            )}
             <div style={{background:"#f8faff",borderRadius:8,padding:"10px 14px",marginBottom:20,fontSize:12,color:"#475569",lineHeight:1.8}}>
               <strong style={{color:"#0f2044"}}>印刷のヒント</strong><br/>・余白「なし」推奨　・「背景グラフィックを印刷する」ON
             </div>
