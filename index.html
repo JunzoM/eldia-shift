@@ -943,8 +943,105 @@ function StaffPatternPanel({ s, globalTemplates, onUpdate }) {
   );
 }
 
+
+// ─── DirectTimeInput ──────────────────────────────────────────────────────────
+function DirectTimeInput({ onApply, onClose }) {
+  const [inTime,  setInTime]  = useState("");
+  const [outTime, setOutTime] = useState("");
+  const [open, setOpen] = useState(false);
+
+  const HH = Array.from({length:25},(_,i)=>i);
+  const MM = [0,30];
+
+  function parseTime(str){ // "HH:MM" → {h,m}
+    if(!str) return null;
+    const [h,m] = str.split(":").map(Number);
+    return {h,m};
+  }
+
+  const inP  = parseTime(inTime);
+  const outP = parseTime(outTime);
+  const hours = (inP&&outP) ? calcH(inP.h,inP.m,outP.h,outP.m) : null;
+
+  function apply(){
+    if(!inTime||!outTime) return;
+    onApply(inTime, outTime);
+    onClose();
+  }
+
+  if(!open) return (
+    <div style={{borderTop:"1px solid #f1f5f9",padding:"8px 0 4px"}}>
+      <button onClick={()=>setOpen(true)} style={{
+        width:"100%",background:"#f8faff",border:"1.5px dashed #dde3ef",
+        borderRadius:7,padding:"7px",cursor:"pointer",
+        fontSize:12.5,color:"#64748b",fontFamily:"'Noto Sans JP',sans-serif",
+        display:"flex",alignItems:"center",justifyContent:"center",gap:6,
+      }}>
+        ✏️ この日だけ直接時刻入力
+      </button>
+    </div>
+  );
+
+  return (
+    <div style={{borderTop:"1px solid #f1f5f9",padding:"12px 0 4px"}}>
+      <div style={{fontSize:12,fontWeight:700,color:"#0f2044",marginBottom:10,display:"flex",alignItems:"center",gap:6}}>
+        ✏️ この日だけ直接入力
+        <span style={{fontSize:10.5,color:"#94a3b8",fontWeight:400}}>— テンプレートは使わない</span>
+      </div>
+      <div style={{display:"flex",gap:16,alignItems:"center",marginBottom:10,flexWrap:"wrap"}}>
+        {/* IN */}
+        <div style={{display:"flex",alignItems:"center",gap:6}}>
+          <span style={{fontSize:12,fontWeight:700,color:"#0f766e",minWidth:20}}>入</span>
+          <select value={inP?.h??""} onChange={e=>setInTime(e.target.value!==""?`${String(e.target.value).padStart(2,"0")}:${String(inP?.m??0).padStart(2,"0")}`:"")} style={{...SEL}}>
+            <option value="">--</option>
+            {HH.map(h=><option key={h} value={h}>{String(h).padStart(2,"0")}</option>)}
+          </select>
+          <span style={{color:"#94a3b8"}}>:</span>
+          <select value={inP?.m??""} onChange={e=>setInTime(inP?`${String(inP.h).padStart(2,"0")}:${String(e.target.value).padStart(2,"0")}`:"")} style={{...SEL}}>
+            <option value="">--</option>
+            {MM.map(m=><option key={m} value={m}>{String(m).padStart(2,"0")}</option>)}
+          </select>
+        </div>
+        {/* OUT */}
+        <div style={{display:"flex",alignItems:"center",gap:6}}>
+          <span style={{fontSize:12,fontWeight:700,color:"#dc2626",minWidth:20}}>出</span>
+          <select value={outP?.h??""} onChange={e=>setOutTime(e.target.value!==""?`${String(e.target.value).padStart(2,"0")}:${String(outP?.m??0).padStart(2,"0")}`:"")} style={{...SEL}}>
+            <option value="">--</option>
+            {HH.map(h=><option key={h} value={h}>{String(h).padStart(2,"0")}</option>)}
+          </select>
+          <span style={{color:"#94a3b8"}}>:</span>
+          <select value={outP?.m??""} onChange={e=>setOutTime(outP?`${String(outP.h).padStart(2,"0")}:${String(e.target.value).padStart(2,"0")}`:"")} style={{...SEL}}>
+            <option value="">--</option>
+            {MM.map(m=><option key={m} value={m}>{String(m).padStart(2,"0")}</option>)}
+          </select>
+        </div>
+        {/* 実働時間 */}
+        {hours!==null&&(
+          <span style={{fontSize:12,color:"#64748b"}}>
+            → <strong style={{color:"#0f2044"}}>{hours}h</strong>
+          </span>
+        )}
+      </div>
+      <div style={{display:"flex",gap:6}}>
+        <button onClick={apply} disabled={!inTime||!outTime} style={{
+          background:inTime&&outTime?"#c9a84c":"#e2e8f0",
+          color:inTime&&outTime?"#0f2044":"#94a3b8",
+          border:"none",padding:"6px 18px",borderRadius:7,
+          fontWeight:700,fontSize:12.5,cursor:inTime&&outTime?"pointer":"not-allowed",
+          fontFamily:"'Noto Sans JP',sans-serif",
+        }}>適用</button>
+        <button onClick={()=>setOpen(false)} style={{
+          background:"#fff",color:"#64748b",border:"1.5px solid #dde3ef",
+          padding:"6px 12px",borderRadius:7,fontSize:12,cursor:"pointer",
+          fontFamily:"'Noto Sans JP',sans-serif",
+        }}>キャンセル</button>
+      </div>
+    </div>
+  );
+}
+
 // ─── CellPicker (shared between WeekCell & MonthCell) ─────────────────────────
-function CellPicker({ pos, s, globalTemplates, currentBlockId, onSelect, onClose }) {
+function CellPicker({ pos, s, globalTemplates, currentBlockId, onSelect, onSelectCustomTime, onClose }) {
   const [search,setSearch]=useState("");
   const ref=useRef(null);
   useEffect(()=>{
@@ -1026,6 +1123,8 @@ function CellPicker({ pos, s, globalTemplates, currentBlockId, onSelect, onClose
           </div>
         </div>
       )}
+      {/* 直接時刻入力 */}
+      {!search&&<DirectTimeInput onApply={onSelectCustomTime} onClose={onClose}/>}
       <div style={{borderTop:"1px solid #f1f5f9",paddingTop:6,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
         <button onClick={()=>onSelect(null)} style={{fontSize:12,color:"#94a3b8",background:"none",border:"none",cursor:"pointer"}}>✕ クリア</button>
         <button onClick={onClose} style={{fontSize:12,color:"#fff",background:"#0f2044",border:"none",borderRadius:6,padding:"4px 14px",cursor:"pointer",fontFamily:"'Noto Sans JP',sans-serif"}}>閉じる</button>
@@ -1057,6 +1156,12 @@ function ShiftCell({ s, dateObj, globalTemplates, cellData, setCellData, getEffe
     } else {
       setCellData(prev=>{const k=`${s.id}|${dateObj.toISOString().slice(0,10)}`;return{...prev,[k]:{inTime:fmtT(block.inH,block.inM),outTime:fmtT(block.outH,block.outM),blockId:block.id,isOff:false,auto:false}};});
     }
+    setPP(null);
+  }
+
+  function handleSelectCustomTime(inTime, outTime){
+    const dStr=dateObj.toISOString().slice(0,10); // ck()と同じUTC形式で統一
+    setCellData(prev=>({...prev,[`${s.id}|${dStr}`]:{inTime,outTime,blockId:null,isOff:false,auto:false}}));
     setPP(null);
   }
 
@@ -1096,7 +1201,7 @@ function ShiftCell({ s, dateObj, globalTemplates, cellData, setCellData, getEffe
         {bc&&eff&&<span style={{position:"absolute",bottom:1,left:0,right:0,textAlign:"center",fontSize:7,color:bc.color,fontWeight:700}}>{b?.short}</span>}
       </td>
       {pp&&ReactDOM.createPortal(
-        <CellPicker pos={pp} s={s} globalTemplates={globalTemplates} currentBlockId={eff?.blockId} onSelect={handleSelect} onClose={()=>setPP(null)}/>,
+        <CellPicker pos={pp} s={s} globalTemplates={globalTemplates} currentBlockId={eff?.blockId} onSelect={handleSelect} onSelectCustomTime={handleSelectCustomTime} onClose={()=>setPP(null)}/>,
         document.body
       )}
     </>
@@ -1307,28 +1412,32 @@ function ShiftApp() {
 function ManualModal({ onClose }) {
   const sections = [
     {
-      icon:"📅", title:"シフト表の基本操作",
+      icon:"📱", title:"基本的な使い方",
       items:[
-        ["週 / 月 切り替え", "ヘッダーの「週」「月」ボタンで表示を切り替えます。週表示は月〜日の7列、月表示は1〜31日の全月表示です。"],
-        ["シフトを入力する", "セルをクリックするとシフト選択モーダルが開きます。個人テンプレート・共通テンプレート・休日から選択できます。"],
-        ["入力をクリアする", "モーダル下部の「✕ クリア」でセルの入力を消去できます。"],
+        ["週 / 月 切り替え", "ヘッダーの「週」「月」ボタンで切り替え。週表示は月〜日の7列、月表示は1〜31日の全月表示です。"],
+        ["シフトを入力する", "セルをクリックするとシフト選択モーダルが画面中央に開きます。個人テンプレート・共通テンプレート・休日から選択できます。検索ボックスでテンプレートを絞り込めます。"],
+        ["時刻を直接修正", "週表示では入/出の時刻をセルから直接クリックして変更できます。"],
+        ["入力をクリアする", "モーダル下部の「✕ クリア」でセルの入力を消去してパターン自動入力に戻ります。"],
         ["🟡 黄色い点", "週間パターンから自動入力されたセルを示します。手動で変更するとドットが消えます。"],
+        ["固定表示", "No・氏名・入出列は左固定、日付行は上固定、合計列は右固定です。スクロールしても常に見えます。"],
       ]
     },
     {
       icon:"⏱", title:"時間テンプレートの管理",
       items:[
-        ["個人テンプレート", "設定 → スタッフ → ⏱ 個人時間テンプレートで、そのスタッフだけが使える時間帯を登録できます。名称・略称・IN/OUT・カラーを設定します。"],
-        ["共通テンプレート", "設定 → 🌐 共通テンプレートで、全スタッフが使える時間テンプレートを管理します。"],
-        ["略称", "セルに表示される短い名前（例：日・夜・12）です。3文字以内で設定してください。"],
+        ["個人テンプレート", "設定 → スタッフ → ⏱ 個人時間テンプレート で、そのスタッフだけが使える時間帯を登録します。名称・略称（3文字以内）・IN/OUT時刻・カラーを設定します。"],
+        ["共通テンプレート", "設定 → 🌐 共通テンプレート で、全スタッフが使える時間テンプレートを管理します。よく使う時間帯を登録しておくと効率的です。"],
+        ["優先表示", "シフト選択モーダルでは「個人テンプレート → 共通テンプレート → 休日」の順で表示されます。"],
+        ["略称", "シフトセルの下部に小さく表示される識別子です。3文字以内で設定してください（例：日・夜・12）。"],
       ]
     },
     {
       icon:"📅", title:"週間パターン",
       items:[
         ["パターンの作成", "設定 → スタッフ → 📅 週間パターン → 「＋ 週間パターンを作成」で作成します。"],
-        ["ブロックの割り当て", "パターン編集画面でブロックチップをクリックすると曜日選択ポップアップが表示されます。割り当てたい曜日をタップして設定してください。"],
+        ["ブロックの割り当て", "パターン編集画面でブロックチップをクリックすると曜日選択ポップアップが表示されます。割り当てたい曜日をクリックして設定してください。"],
         ["パターンの切り替え", "シフト表のスタッフ名欄のドロップダウンで、その場でパターンを切り替えられます。"],
+        ["複数パターン", "1人のスタッフに複数のパターンを登録できます（例：通常・夜勤週）。適用ボタンで切り替えます。"],
       ]
     },
     {
@@ -1336,27 +1445,51 @@ function ManualModal({ onClose }) {
       items:[
         ["作成方法", "設定 → スタッフ → 🗓 期間限定パターン → 「＋ 期間限定パターンを作成」で作成します。"],
         ["期間設定", "名称・開始日・終了日を設定すると、その期間の日付が一覧表示されます。各日にシフトを割り当ててください。"],
-        ["一括設定", "「一括設定」ボタンで期間内の全日を同じシフトに設定できます。"],
+        ["一括設定", "「一括設定」ボタンで期間内の全日を同じシフトにまとめて設定できます。その後個別に修正も可能です。"],
         ["優先順位", "手動入力 → 期間限定パターン → 週間パターン の順で優先されます。期間が終わると自動的に週間パターンに戻ります。"],
+        ["注意", "期間内の未設定の日（空欄）は週間パターンも適用されず空白になります。すべての日にシフトを設定してください。"],
       ]
     },
     {
       icon:"👤", title:"スタッフ管理",
       items:[
-        ["スタッフの追加", "シフト表の「＋ スタッフ」ボタン、または設定タブから追加できます。名前と部署を入力してください。"],
-        ["退職日の設定", "設定 → スタッフ → 退職日を入力すると、退職月は退職日以降のセルがグレーアウトし、翌月から自動的に非表示になります。"],
+        ["スタッフの追加", "シフト表の「＋ スタッフ」ボタン、または設定タブから追加します。名前と部署を入力してください。"],
+        ["名前・部署の変更", "設定 → スタッフ → スタッフを開く → 名前・部署を編集できます。"],
+        ["退職日の設定", "退職日を入力すると退職日以降のセルがグレーアウトし、翌月から自動的に非表示になります。退職月は通常通り表示されます。"],
         ["退職者の表示", "シフト表の「退職者も表示」チェックをONにすると退職済みスタッフも確認できます。"],
-        ["番号の繰り上げ", "スタッフを削除すると、同じ部署のスタッフ番号が自動的に繰り上がります。"],
+        ["並び替え", "設定 → スタッフ → 各カードをドラッグ＆ドロップで並び替えできます。↑↓ボタンでも移動可能。同じ部署内のみ移動でき、No は自動的に振り直されます。"],
+        ["削除と番号繰り上げ", "スタッフを削除すると同じ部署の番号が自動的に繰り上がります。"],
+        ["部署の表示順", "シフト表・印刷ともに メイク → キッチン → フロント の順で表示されます。"],
+      ]
+    },
+    {
+      icon:"📊", title:"月次集計",
+      items:[
+        ["集計の確認", "ヘッダーの「集計」タブで月ごとの出勤日数・総時間を確認できます。"],
+        ["休憩控除", "実労4.5h〜6.5h未満は0.5h控除、6.5h以上は1h控除して表示されます。"],
+        ["表示月の切り替え", "ヘッダーの ‹ › ボタンで月を切り替えると集計も連動します。"],
       ]
     },
     {
       icon:"🖨", title:"印刷・PDF出力",
       items:[
         ["印刷の開始", "シフト表の「🖨 印刷 / PDF」ボタンをクリックすると印刷モーダルが開きます。"],
-        ["フォーマット選択", "A4縦（15日×2枚）・A4縦（全月1枚）・A4横の3種類から選択できます。"],
-        ["新しいウィンドウ", "印刷ボタンを押すと新しいウィンドウが開いて自動印刷されます。ブラウザのポップアップブロックを「許可」にしてください。"],
-        ["PDF保存", "印刷ダイアログで「PDFとして保存」を選択するとPDFファイルを作成できます。"],
-        ["白黒印刷", "土曜・日曜は灰色で自動識別、有休は「○有」で印刷されます。"],
+        ["フォーマット一覧", "① 週表示A4縦（紙と同じ形式）② 週表示A4横 ③ 月表示A4縦×2（全部門 前後半） ④ 月表示部門別×4枚（メイク前後半・厨房FL前後半）⑤ 月表示部門別×4枚(横) ⑥ 月表示A4横（全月1枚）の6種類。"],
+        ["前半/後半の選択", "月表示フォーマット選択時に「前半のみ（1〜15日）」「後半のみ（16日〜末日）」「両方」を選択できます。"],
+        ["白黒印刷対応", "日曜=濃グレー、土曜=中グレーで識別。有休は○有で印刷。公休は印刷されません。各スタッフ行を太い罫線で囲んで見やすくしています。"],
+        ["退職日以降", "退職日以降のセルは×で印刷されます。"],
+        ["新しいウィンドウ", "印刷ボタンで新しいウィンドウが自動で開いて印刷ダイアログが表示されます。ブラウザのポップアップを「許可」にしてください。"],
+        ["PDF保存", "印刷ダイアログで「PDFとして保存」を選択するとPDFが作成できます。余白「なし」・「背景グラフィックを印刷する」をONにしてください。"],
+      ]
+    },
+    {
+      icon:"💾", title:"データ保存",
+      items:[
+        ["自動保存", "変更するたびに約1秒後にSupabaseへ自動保存されます。ヘッダー右端のインジケーターで確認できます。"],
+        ["🟢 保存済み", "最新の状態が保存されています。"],
+        ["🟡 保存中…", "保存処理中です。ブラウザを閉じないでください。"],
+        ["🔴 オフライン", "インターネット未接続またはサーバーエラーです。接続を確認してください。"],
+        ["複数端末", "同じURLを別の端末で開いても同じデータが表示されます（ページを再読み込みすると最新データが反映されます）。"],
       ]
     },
   ];
