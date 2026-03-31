@@ -1597,7 +1597,7 @@ ${body ? body.innerHTML : ""}
 
 
   // ─── Print ────────────────────────────────────────────────────────────────
-  function PrintModal({onClose}){
+  function PrintModal({onClose, year, month, monthDates, weekDates, weekLabel, viewMode, staffByDept, summary, globalTemplates, getEffective, findBlock}){
     const [fmt,setFmt]=useState("weekly-portrait");
     const [halfSel,setHalfSel]=useState("both"); // "both"|"first"|"second"
     function doPrint(){
@@ -2325,7 +2325,7 @@ ${pw.innerHTML}
         </>}
       </div>
 
-      {showPrint&&<PrintModal onClose={()=>setShowPrint(false)}/>}
+      {showPrint&&<PrintModal onClose={()=>setShowPrint(false)} year={year} month={month} monthDates={monthDates} weekDates={weekDates} weekLabel={weekLabel} viewMode={viewMode} staffByDept={staffByDept} summary={summary} globalTemplates={globalTemplates} getEffective={getEffective} findBlock={findBlock}/>}
     </div>
   );
 }
