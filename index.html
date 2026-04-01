@@ -100,6 +100,7 @@ const getWeekDates = mon => Array.from({length:7},(_,i)=>{ const d=new Date(mon)
 const OFF_BLOCKS = [
   { id:"off1", label:"公休", short:"休", inH:null, inM:null, outH:null, outM:null, colorIdx:4 },
   { id:"off2", label:"有休", short:"有", inH:null, inM:null, outH:null, outM:null, colorIdx:3 },
+  { id:"off3", label:"当欠", short:"欠", inH:null, inM:null, outH:null, outM:null, colorIdx:7 },
 ];
 
 // 部門定義（部門名と標準ブロックのみ。実際の時間はスタッフ個人テンプレートで管理）
@@ -1753,6 +1754,14 @@ ${pw.innerHTML}
                                   display:"flex",alignItems:"center",justifyContent:"center",
                                   borderRadius:"50%",
                                 }}>有</div>
+                              ):b?.id==="off3"?(
+                                <div style={{
+                                  fontSize:"8pt",fontWeight:900,color:"#000",
+                                  border:"1pt solid #000",margin:"1pt auto",
+                                  width:"10pt",height:"10pt",
+                                  display:"flex",alignItems:"center",justifyContent:"center",
+                                  borderRadius:"50%",
+                                }}>欠</div>
                               ):null
                             ):(
                               <div style={{display:"flex",flexDirection:"column",fontSize:fsTime,fontFamily:"monospace",fontWeight:700,lineHeight:1.6}}>
