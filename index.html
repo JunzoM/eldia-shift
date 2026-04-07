@@ -1209,7 +1209,7 @@ function ShiftCell({ s, dateObj, globalTemplates, cellData, setCellData, getEffe
         {/* Auto dot */}
         {auto&&eff&&<span style={{position:"absolute",top:2,right:2,width:4,height:4,borderRadius:"50%",background:"#c9a84c"}}/>}
         {/* Block label */}
-        {bc&&eff&&<span style={{position:"absolute",bottom:1,left:0,right:0,textAlign:"center",fontSize:7,color:bc.color,fontWeight:700}}>{b?.short}</span>}
+        {bc&&eff&&!eff.isOff&&<span style={{position:"absolute",bottom:1,left:0,right:0,textAlign:"center",fontSize:7,color:bc.color,fontWeight:700}}>{b?.short}</span>}
       </td>
       {pp&&ReactDOM.createPortal(
         <CellPicker pos={pp} s={s} globalTemplates={globalTemplates} currentBlockId={eff?.blockId} onSelect={handleSelect} onSelectCustomTime={handleSelectCustomTime} onClose={()=>setPP(null)}/>,
