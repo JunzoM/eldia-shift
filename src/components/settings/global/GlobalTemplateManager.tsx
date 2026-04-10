@@ -51,9 +51,9 @@ export function GlobalTemplateManager() {
         {!creating && !editingId && (
           <div
             onClick={() => setCreating(true)}
-            style={{ border: '2px dashed #dde3ef', borderRadius: 9, background: '#fafbff', minHeight: 90, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: '#94a3b8', gap: 4, transition: 'all .15s' }}
-            onMouseEnter={e => (e.currentTarget.style.borderColor = '#c9a84c')}
-            onMouseLeave={e => (e.currentTarget.style.borderColor = '#dde3ef')}
+            style={{ border: '2px dashed rgba(201,168,76,.35)', borderRadius: 10, background: 'rgba(255,255,255,.5)', backdropFilter: 'blur(8px)', minHeight: 90, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: '#94a3b8', gap: 4, transition: 'all .15s' }}
+            onMouseEnter={e => { e.currentTarget.style.borderColor = 'rgba(201,168,76,.7)'; e.currentTarget.style.background = 'rgba(255,255,255,.7)' }}
+            onMouseLeave={e => { e.currentTarget.style.borderColor = 'rgba(201,168,76,.35)'; e.currentTarget.style.background = 'rgba(255,255,255,.5)' }}
           >
             <span style={{ fontSize: 22 }}>＋</span>
             <span style={{ fontSize: 11.5, fontWeight: 600 }}>追加</span>

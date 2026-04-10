@@ -281,7 +281,7 @@ ${pw.innerHTML}
         style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.5)', zIndex: 9000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
         onClick={e => { if (e.target === e.currentTarget) onClose() }}
       >
-        <div style={{ background: '#fff', borderRadius: 14, padding: 24, width: 660, maxWidth: '95vw', maxHeight: '90vh', overflow: 'auto', boxShadow: '0 20px 60px rgba(0,0,0,.3)' }}>
+        <div style={{ background: 'rgba(255,255,255,.85)', backdropFilter: 'blur(24px) saturate(180%)', WebkitBackdropFilter: 'blur(24px) saturate(180%)', border: '1px solid rgba(255,255,255,.9)', borderRadius: 16, padding: 24, width: 660, maxWidth: '95vw', maxHeight: '90vh', overflow: 'auto', boxShadow: 'inset 0 1px 0 rgba(255,255,255,.7), 0 24px 60px rgba(15,32,68,.2)' }}>
           <div style={{ display: 'flex', alignItems: 'center', marginBottom: 20 }}>
             <div style={{ fontWeight: 700, fontSize: 16, color: '#0f2044' }}>🖨 印刷・PDF出力</div>
             <button onClick={onClose} style={{ marginLeft: 'auto', background: 'none', border: 'none', fontSize: 20, color: '#94a3b8', cursor: 'pointer' }}>×</button>

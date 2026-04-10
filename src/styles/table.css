@@ -1,4 +1,4 @@
-/* Sticky shift table CSS – port of original inline styles */
+/* Sticky shift table CSS */
 
 table { border-collapse: collapse; }
 th, td { white-space: nowrap; }
@@ -9,27 +9,27 @@ th, td { white-space: nowrap; }
   background: #0f2044; color: rgba(255,255,255,.4);
   padding: 0 4px; width: 32px; min-width: 32px; height: 52px;
   font-size: 10px; text-align: center;
-  border-right: 1px solid #1a3260;
+  border-right: 1px solid rgba(255,255,255,.08);
 }
 .th-name {
   position: sticky; top: 0; left: 32px; z-index: 102;
   background: #0f2044; color: rgba(255,255,255,.75);
   padding: 0 8px; min-width: 108px; width: 108px; height: 52px;
   font-size: 11px; text-align: left; vertical-align: middle;
-  border-right: 1px solid #1a3260;
+  border-right: 1px solid rgba(255,255,255,.08);
 }
 .th-io {
   position: sticky; top: 0; left: 140px; z-index: 101;
-  background: #334155;
+  background: #1e3a5f;
   width: 18px; min-width: 18px; height: 52px;
   text-align: center;
-  border-right: 1px solid #475569;
+  border-right: 1px solid rgba(255,255,255,.08);
 }
 .th-day {
   position: sticky; top: 0; z-index: 100;
   background: #0f2044; color: #fff;
   text-align: center; padding: 0;
-  border-right: 1px solid #1a3260;
+  border-right: 1px solid rgba(255,255,255,.07);
 }
 .th-day-inner {
   display: flex; flex-direction: column; align-items: center;
@@ -37,34 +37,40 @@ th, td { white-space: nowrap; }
 }
 .th-day.sun .th-day-inner { color: #fca5a5; }
 .th-day.sat .th-day-inner { color: #93c5fd; }
-.th-day.tod .th-day-inner { background: #c9a84c; color: #0f2044; border-radius: 4px; }
+.th-day.tod .th-day-inner {
+  background: linear-gradient(135deg, #c9a84c 0%, #e8c96a 100%);
+  color: #0f2044; border-radius: 5px;
+}
 .th-sum {
   position: sticky; top: 0; right: 0; z-index: 101;
   background: #0f2044; color: #c9a84c;
   padding: 0 5px; min-width: 42px;
   text-align: center; font-size: 10px;
-  border-left: 2px solid #c9a84c;
+  border-left: 2px solid rgba(201,168,76,.6);
 }
 
-/* ── tbody sticky cells ── */
+/* ── tbody sticky cells — near-opaque for scroll clipping ── */
 .td-no {
   position: sticky; left: 0; z-index: 5;
-  background: #f8faff;
+  background: rgba(248, 250, 255, 0.97);
   width: 32px; min-width: 32px;
   text-align: center; font-size: 10px; color: #94a3b8;
-  border-right: 1px solid #e2e8f0; border-bottom: 1px solid #e2e8f0;
+  border-right: 1px solid rgba(226,232,240,.7);
+  border-bottom: 1px solid rgba(226,232,240,.5);
 }
 .td-name {
   position: sticky; left: 32px; z-index: 5;
-  background: #fff;
+  background: rgba(255, 255, 255, 0.97);
   min-width: 108px; width: 108px;
   padding: 0 6px;
-  border-right: 1px solid #e2e8f0; border-bottom: 1px solid #e2e8f0;
+  border-right: 1px solid rgba(226,232,240,.7);
+  border-bottom: 1px solid rgba(226,232,240,.5);
 }
 .td-io {
   position: sticky; left: 140px; z-index: 4;
-  background: #f8fffe;
-  border-right: 1px solid #e2e8f0; border-bottom: 1px solid #e2e8f0;
+  background: rgba(240, 253, 250, 0.97);
+  border-right: 1px solid rgba(226,232,240,.7);
+  border-bottom: 1px solid rgba(226,232,240,.5);
   width: 18px; min-width: 18px;
   text-align: center; padding: 0;
 }
@@ -73,7 +79,8 @@ th, td { white-space: nowrap; }
   text-align: center;
   font-family: 'DM Sans', sans-serif; font-weight: 700; font-size: 12px;
   color: #c9a84c; background: #0f2044;
-  border-left: 2px solid #c9a84c; border-bottom: 1px solid #1a3260;
+  border-left: 2px solid rgba(201,168,76,.6);
+  border-bottom: 1px solid rgba(255,255,255,.06);
   padding: 0 5px;
 }
 
@@ -81,16 +88,23 @@ th, td { white-space: nowrap; }
 .tr-dept td {
   font-size: 11px; font-weight: 700;
   padding: 4px 10px; letter-spacing: .04em;
-  border-bottom: 1px solid rgba(0,0,0,.05);
+  border-bottom: 1px solid rgba(0,0,0,.04);
 }
 
 /* Inactive staff */
 .tr-inactive td { opacity: .4; }
 
-/* Grid container */
+/* Grid container — glass card */
 .grid-wrap {
-  background: #fff; border-radius: 11px;
-  border: 1.5px solid #dde3ef;
-  overflow: auto; max-height: calc(100vh - 120px);
-  box-shadow: 0 2px 10px rgba(15,32,68,.07);
+  background: rgba(255, 255, 255, 0.78);
+  backdrop-filter: blur(10px) saturate(160%);
+  -webkit-backdrop-filter: blur(10px) saturate(160%);
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.92);
+  overflow: auto;
+  max-height: calc(100vh - 120px);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,.7),
+    0 4px 24px rgba(15,32,68,.09),
+    0 1px 2px rgba(0,0,0,.04);
 }

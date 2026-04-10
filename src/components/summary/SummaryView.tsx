@@ -41,8 +41,13 @@ export function SummaryView() {
         const dc = PALETTE[dept.colorIdx]
         return (
           <div key={dept.id} style={{
-            background: '#fff', borderRadius: 11, border: '1.5px solid #dde3ef',
-            overflow: 'hidden', boxShadow: '0 2px 10px rgba(15,32,68,.06)',
+            background: 'rgba(255,255,255,.72)',
+            backdropFilter: 'blur(16px) saturate(180%)',
+            WebkitBackdropFilter: 'blur(16px) saturate(180%)',
+            borderRadius: 14,
+            border: '1px solid rgba(255,255,255,.88)',
+            overflow: 'hidden',
+            boxShadow: 'inset 0 1px 0 rgba(255,255,255,.6), 0 4px 8px rgba(15,32,68,.04), 0 12px 32px rgba(15,32,68,.09)',
             borderTop: `3px solid ${dc.color}`,
           }}>
             <div style={{ background: dc.bg, color: dc.color, padding: '10px 16px', fontWeight: 600, fontSize: 13 }}>

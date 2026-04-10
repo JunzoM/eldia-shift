@@ -40,7 +40,7 @@ export default function App() {
   const isLoading = dbStatus === 'loading' || dbStatus === 'init'
 
   return (
-    <div style={{ fontFamily: "'Noto Sans JP',sans-serif", minHeight: '100vh', background: '#f1f5f9', color: '#1e293b' }}>
+    <div style={{ fontFamily: "'Noto Sans JP',sans-serif", minHeight: '100vh', color: '#1e293b' }}>
       <AppHeader />
 
       {/* Loading overlay */}

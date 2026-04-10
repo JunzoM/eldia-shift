@@ -124,7 +124,7 @@ ${body ? body.innerHTML : ''}
       style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.55)', zIndex: 9500, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
       onClick={e => { if (e.target === e.currentTarget) onClose() }}
     >
-      <div style={{ background: '#fff', borderRadius: 14, width: 'min(720px,95vw)', maxHeight: '88vh', overflow: 'auto', boxShadow: '0 20px 60px rgba(0,0,0,.35)', display: 'flex', flexDirection: 'column' }}>
+      <div style={{ background: 'rgba(255,255,255,.85)', backdropFilter: 'blur(24px) saturate(180%)', WebkitBackdropFilter: 'blur(24px) saturate(180%)', border: '1px solid rgba(255,255,255,.9)', borderRadius: 16, width: 'min(720px,95vw)', maxHeight: '88vh', overflow: 'auto', boxShadow: 'inset 0 1px 0 rgba(255,255,255,.7), 0 24px 60px rgba(15,32,68,.2)', display: 'flex', flexDirection: 'column' }}>
         {/* Header */}
         <div style={{ background: '#0f2044', padding: '16px 24px', display: 'flex', alignItems: 'center', borderRadius: '14px 14px 0 0', flexShrink: 0 }}>
           <div>

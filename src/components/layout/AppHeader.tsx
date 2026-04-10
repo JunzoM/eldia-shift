@@ -27,10 +27,14 @@ export function AppHeader() {
 
   return (
     <header style={{
-      background: '#0f2044', padding: '0 20px',
+      background: 'rgba(15,32,68,.9)',
+      backdropFilter: 'blur(20px) saturate(180%)',
+      WebkitBackdropFilter: 'blur(20px) saturate(180%)',
+      borderBottom: '1px solid rgba(255,255,255,.08)',
+      padding: '0 20px',
       display: 'flex', alignItems: 'center', gap: 10,
       height: 52, position: 'sticky', top: 0, zIndex: 200,
-      boxShadow: '0 2px 14px rgba(0,0,0,.3)',
+      boxShadow: '0 4px 24px rgba(0,0,0,.18)',
     }}>
       {/* Logo */}
       <div style={{ fontFamily: "'DM Sans',sans-serif", fontWeight: 700, fontSize: 17, color: '#c9a84c', letterSpacing: '.05em', flexShrink: 0 }}>
