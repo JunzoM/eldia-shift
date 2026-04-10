@@ -24,7 +24,7 @@ interface Props {
 }
 
 export function StaffCard({ s, isOpen, sectionTab, onToggle, onSectionChange, dragStaffId }: Props) {
-  const { updateStaff, moveStaff, handleDrop, setDragOverId, dragOverId, deleteStaff, setStaff, staff } = useShiftStore()
+  const { updateStaff, moveStaff, handleDrop, setDragOverId, dragOverId, setStaff, staff } = useShiftStore()
 
   return (
     <div
