@@ -75,9 +75,17 @@ export function ShiftCell({ s, dateObj, mode = 'month' }: Props) {
         {isAfterLeave ? (
           <span style={{ color: '#cbd5e1', fontSize: 11 }}>－</span>
         ) : eff?.isOff ? (
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-            <span style={{ fontSize: 11, fontWeight: 700, color: bc?.color }}>{b?.short}</span>
-          </div>
+          /* 休日ブロック — 略称バッジのみ表示 */
+          <span style={{
+            display: 'inline-block',
+            fontSize: 12, fontWeight: 800,
+            color: bc?.color,
+            background: bc?.bg,
+            border: `1.5px solid ${bc?.color}`,
+            borderRadius: 5,
+            padding: '2px 5px',
+            lineHeight: 1.3,
+          }}>{b?.short}</span>
         ) : eff ? (
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0, lineHeight: 1.45 }}>
             <span style={{ fontSize: 9.5, fontWeight: 700, color: '#0f766e', fontFamily: "'DM Sans',sans-serif" }}>{eff.inTime || '—'}</span>
@@ -87,7 +95,8 @@ export function ShiftCell({ s, dateObj, mode = 'month' }: Props) {
           <span style={{ color: '#e2e8f0', fontSize: 16 }}>+</span>
         )}
         {auto && eff && <span style={{ position: 'absolute', top: 2, right: 2, width: 4, height: 4, borderRadius: '50%', background: '#c9a84c' }} />}
-        {bc && eff && <span style={{ position: 'absolute', bottom: 1, left: 0, right: 0, textAlign: 'center', fontSize: 7, color: bc.color, fontWeight: 700 }}>{b?.short}</span>}
+        {/* 略称はワークシフトのみ下部に表示（休日は上のバッジで表示済み） */}
+        {bc && eff && !eff.isOff && <span style={{ position: 'absolute', bottom: 1, left: 0, right: 0, textAlign: 'center', fontSize: 7, color: bc.color, fontWeight: 700 }}>{b?.short}</span>}
       </td>
 
       {pickerOpen && (
