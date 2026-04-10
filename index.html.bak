@@ -1,0 +1,2378 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SHIFTMGR — HOTEL ELDIA</title>
+  <!-- React + Babel (インターネット接続が必要) -->
+  <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    body { margin: 0; padding: 0; background: #f1f5f9; }
+    #root { min-height: 100vh; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <div id="error-display" style="display:none;padding:20px;background:#fee2e2;color:#dc2626;font-family:monospace;white-space:pre-wrap;font-size:13px;border:2px solid #dc2626;margin:20px;border-radius:8px;"></div>
+  <script>
+    window.addEventListener('error', function(e) {
+      var el = document.getElementById('error-display');
+      el.style.display = 'block';
+      el.textContent = 'エラー: ' + e.message + '\nファイル: ' + e.filename + '\n行: ' + e.lineno;
+    });
+  </script>
+  <script type="text/babel" data-presets="react">
+const { useState, useMemo, useRef, useEffect } = React;
+
+// ─── Supabase 設定 ────────────────────────────────────────────────────────────
+// 接続情報を入力してください
+const SUPABASE_URL = "https://yaslfksvlvdqlkjrnlfr.supabase.co";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inlhc2xma3N2bHZkcWxranJubGZyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM4NzIxMTAsImV4cCI6MjA4OTQ0ODExMH0.1BJktZH4GwsuRzmPyTL1w1GBxhVUtGyun12rwpKBN9U";
+
+const sbClient = (SUPABASE_URL && SUPABASE_ANON_KEY)
+  ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
+  : null;
+console.log("sbClient:", sbClient ? "OK (URL=" + SUPABASE_URL + ")" : "NULL - 接続情報が未設定");
+
+async function dbLoad(key) {
+  if (!sbClient) { console.warn("dbLoad: sbClient is null"); return null; }
+  console.log("dbLoad start:", key);
+  try {
+    const { data, error } = await sbClient
+      .from("shift_store")
+      .select("value")
+      .eq("key", key)
+      .maybeSingle();
+    if (error) { console.error("dbLoad error:", error.message); throw error; }
+    console.log("dbLoad ok:", key, data ? "found" : "not found");
+    return data ? data.value : null;
+  } catch(e) { console.error("dbLoad exception:", e); return null; }
+}
+
+async function dbSave(key, value) {
+  if (!sbClient) { console.warn("dbSave: sbClient is null"); return; }
+  try {
+    const { data, error } = await sbClient.from("shift_store").upsert(
+      { key, value, updated_at: new Date().toISOString() },
+      { onConflict: "key" }
+    );
+    if (error) {
+      console.error("dbSave error:", error.message, error.details, error.hint);
+      alert("保存エラー: " + error.message);
+    } else {
+      console.log("dbSave ok:", key);
+    }
+  } catch(e) { console.error("dbSave exception:", e); alert("保存例外: " + e.message); }
+}
+
+// ─── Constants ────────────────────────────────────────────────────────────────
+const JP_WD = ["日","月","火","水","木","金","土"];
+const PALETTE = [
+  { color:"#1d4ed8", bg:"#dbeafe" },  // 0 blue
+  { color:"#6d28d9", bg:"#ede9fe" },  // 1 purple
+  { color:"#0f766e", bg:"#ccfbf1" },  // 2 teal
+  { color:"#b45309", bg:"#fef3c7" },  // 3 amber
+  { color:"#dc2626", bg:"#fee2e2" },  // 4 red
+  { color:"#059669", bg:"#d1fae5" },  // 5 green
+  { color:"#0369a1", bg:"#e0f2fe" },  // 6 sky
+  { color:"#be185d", bg:"#fce7f3" },  // 7 pink
+  { color:"#334155", bg:"#f1f5f9" },  // 8 slate
+  { color:"#7c3aed", bg:"#f5f3ff" },  // 9 violet
+];
+const uid    = () => Math.random().toString(36).slice(2,8);
+const fmtT   = (h,m) => `${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}`;
+const fmtTP  = (h,m) => `${h}:${String(m).padStart(2,"0")}`;  // 印刷用: 先頭ゼロなし
+const calcH  = (ih,im,oh,om) => { if(ih==null)return 0; let d=(oh*60+om)-(ih*60+im); if(d<=0)d+=1440; return +(d/60).toFixed(1); };
+const getDays  = (y,m) => new Date(y,m+1,0).getDate();
+const getDow   = (y,m,d) => new Date(y,m,d).getDay();
+const getMondayOf = date => {
+  const d=new Date(date); const dow=d.getDay();
+  d.setDate(d.getDate()+(dow===0?-6:1-dow)); d.setHours(0,0,0,0); return d;
+};
+const getWeekDates = mon => Array.from({length:7},(_,i)=>{ const d=new Date(mon); d.setDate(d.getDate()+i); return d; });
+
+// ─── Static data ──────────────────────────────────────────────────────────────
+
+// 共通の休日ブロック
+const OFF_BLOCKS = [
+  { id:"off1", label:"公休", short:"休", inH:null, inM:null, outH:null, outM:null, colorIdx:4 },
+  { id:"off2", label:"有休", short:"有", inH:null, inM:null, outH:null, outM:null, colorIdx:3 },
+  { id:"off3", label:"当欠", short:"欠", inH:null, inM:null, outH:null, outM:null, colorIdx:7 },
+];
+
+// 部門定義（部門名と標準ブロックのみ。実際の時間はスタッフ個人テンプレートで管理）
+const INIT_DEPTS = [
+  { id:"make",    label:"メイク",     colorIdx:7 },
+  { id:"kitchen", label:"キッチン",   colorIdx:2 },
+  { id:"front",   label:"フロント",   colorIdx:0 },
+];
+
+// 共通テンプレート（全スタッフが参照できる）
+const INIT_GLOBAL_TEMPLATES = [
+  { id:"g01", label:"12H日勤",  short:"12日", inH:10, inM:0,  outH:22, outM:0,  colorIdx:0 },
+  { id:"g02", label:"12H夜勤",  short:"12夜", inH:22, inM:0,  outH:10, outM:0,  colorIdx:8 },
+  { id:"g03", label:"24H勤務",  short:"24",   inH:10, inM:0,  outH:10, outM:0,  colorIdx:1 },
+  { id:"g04", label:"朝番",     short:"朝",   inH:9,  inM:0,  outH:18, outM:0,  colorIdx:2 },
+  { id:"g05", label:"夕番",     short:"夕",   inH:18, inM:0,  outH:21, outM:0,  colorIdx:3 },
+  { id:"g06", label:"夜勤",     short:"夜",   inH:21, inM:0,  outH:9,  outM:0,  colorIdx:8 },
+  { id:"g07", label:"M日勤",    short:"M日",  inH:9,  inM:0,  outH:18, outM:0,  colorIdx:5 },
+  { id:"g08", label:"M夕番",    short:"M夕",  inH:18, inM:0,  outH:24, outM:0,  colorIdx:3 },
+  { id:"g09", label:"M夜勤",    short:"M夜",  inH:20, inM:0,  outH:6,  outM:0,  colorIdx:8 },
+  { id:"g10", label:"M 12H",    short:"M12",  inH:9,  inM:0,  outH:21, outM:0,  colorIdx:9 },
+  { id:"g11", label:"深夜",     short:"深",   inH:20, inM:30, outH:6,  outM:30, colorIdx:8 },
+  { id:"g12", label:"フロント短",short:"短",  inH:9,  inM:0,  outH:15, outM:0,  colorIdx:6 },
+  { id:"g13", label:"フロント昼",short:"昼",  inH:9,  inM:0,  outH:21, outM:0,  colorIdx:0 },
+];
+
+// スタッフデータ
+// timeBlocks = このスタッフ専用の時間テンプレート
+// patterns   = 週間パターン（days[0..6]にblockIdを格納）
+const INIT_STAFF = [
+  { id:1,  no:1,  name:"宮本賢央",  deptId:"front",   active:true,  joinDate:"2024-04-01", leaveDate:"",
+    timeBlocks:[
+      { id:"b1a", label:"宮本_昼",  short:"昼", inH:9,  inM:0, outH:15, outM:0, colorIdx:6 },
+      { id:"b1b", label:"宮本_夜",  short:"夜", inH:15, inM:0, outH:21, outM:0, colorIdx:8 },
+    ],
+    patterns:[{id:"p1",label:"通常",colorIdx:0,days:["off1","b1a","b1b","off1","b1a","b1b","off1"]}],
+    activePatternId:"p1" , periodPatterns:[] },
+  { id:2,  no:2,  name:"村井淳三",  deptId:"front",   active:true,  joinDate:"2023-01-01", leaveDate:"",
+    timeBlocks:[
+      { id:"b2a", label:"村井_昼",  short:"昼", inH:9,  inM:0, outH:21, outM:0, colorIdx:0 },
+    ],
+    patterns:[{id:"p2",label:"通常",colorIdx:0,days:["b2a","b2a","b2a","b2a","b2a","off1","off1"]}],
+    activePatternId:"p2" , periodPatterns:[] },
+  { id:3,  no:3,  name:"天野秀",    deptId:"front",   active:true,  joinDate:"2023-06-01", leaveDate:"", timeBlocks:[], patterns:[], activePatternId:null, periodPatterns:[] },
+  { id:4,  no:4,  name:"坂井孝之",  deptId:"front",   active:true,  joinDate:"2024-01-01", leaveDate:"", timeBlocks:[], patterns:[], activePatternId:null, periodPatterns:[] },
+  { id:5,  no:5,  name:"高",        deptId:"front",   active:true,  joinDate:"2024-06-01", leaveDate:"", timeBlocks:[], patterns:[], activePatternId:null, periodPatterns:[] },
+  { id:6,  no:6,  name:"ニマンティ",deptId:"front",   active:true,  joinDate:"2024-01-01", leaveDate:"", timeBlocks:[], patterns:[], activePatternId:null, periodPatterns:[] },
+  { id:7,  no:7,  name:"ピア",      deptId:"front",   active:true,  joinDate:"2024-03-01", leaveDate:"", timeBlocks:[], patterns:[], activePatternId:null, periodPatterns:[] },
+  { id:8,  no:8,  name:"カイン",    deptId:"front",   active:true,  joinDate:"2024-01-01", leaveDate:"", timeBlocks:[], patterns:[], activePatternId:null, periodPatterns:[] },
+  { id:9,  no:9,  name:"ラビィ",    deptId:"front",   active:true,  joinDate:"2024-05-01", leaveDate:"", timeBlocks:[], patterns:[], activePatternId:null, periodPatterns:[] },
+  { id:10, no:10, name:"岩倉直輝",  deptId:"front",   active:true,  joinDate:"2024-04-01", leaveDate:"", timeBlocks:[], patterns:[], activePatternId:null, periodPatterns:[] },
+  { id:11, no:11, name:"ショボン",  deptId:"front",   active:true,  joinDate:"2024-07-01", leaveDate:"", timeBlocks:[], patterns:[], activePatternId:null, periodPatterns:[] },
+  { id:12, no:12, name:"ザハン",    deptId:"front",   active:true,  joinDate:"2024-08-01", leaveDate:"", timeBlocks:[], patterns:[], activePatternId:null, periodPatterns:[] },
+  { id:13, no:13, name:"タンジナ",  deptId:"front",   active:true,  joinDate:"2024-09-01", leaveDate:"", timeBlocks:[], patterns:[], activePatternId:null, periodPatterns:[] },
+  { id:14, no:14, name:"カマラ",    deptId:"front",   active:false, joinDate:"2024-01-01", leaveDate:"2026-03-08", timeBlocks:[], patterns:[], activePatternId:null, periodPatterns:[] },
+  { id:15, no:15, name:"スレス",    deptId:"front",   active:true,  joinDate:"2024-10-01", leaveDate:"", timeBlocks:[], patterns:[], activePatternId:null, periodPatterns:[] },
+  { id:16, no:16, name:"クマリ",    deptId:"front",   active:false, joinDate:"2024-01-01", leaveDate:"2026-03-06", timeBlocks:[], patterns:[], activePatternId:null, periodPatterns:[] },
+  { id:17, no:17, name:"サラマ",    deptId:"front",   active:true,  joinDate:"2025-01-01", leaveDate:"", timeBlocks:[], patterns:[], activePatternId:null, periodPatterns:[] },
+  { id:18, no:18, name:"ゴーデル",  deptId:"front",   active:true,  joinDate:"2025-03-08", leaveDate:"", timeBlocks:[], patterns:[], activePatternId:null, periodPatterns:[] },
+  { id:19, no:19, name:"バラット",  deptId:"front",   active:false, joinDate:"2025-01-01", leaveDate:"2026-03-10", timeBlocks:[], patterns:[], activePatternId:null, periodPatterns:[] },
+  { id:20, no:20, name:"倉貫加代",  deptId:"front",   active:true,  joinDate:"2024-04-01", leaveDate:"",
+    timeBlocks:[{ id:"b20a", label:"倉貫_夜", short:"夜", inH:20, inM:30, outH:6,  outM:30, colorIdx:8 }],
+    patterns:[{id:"p20",label:"夜勤週",colorIdx:8,days:["b20a","off1","b20a","off1","off1","b20a","b20a"]}],
+    activePatternId:"p20" , periodPatterns:[] },
+  { id:21, no:21, name:"坂元拓也",  deptId:"front",   active:true,  joinDate:"2024-04-01", leaveDate:"",
+    timeBlocks:[{ id:"b21a", label:"坂元_夜", short:"夜", inH:20, inM:0, outH:7,  outM:0, colorIdx:8 }],
+    patterns:[{id:"p21",label:"夜勤週",colorIdx:8,days:["b21a","b21a","b21a","b21a","b21a","off1","off1"]}],
+    activePatternId:"p21" , periodPatterns:[] },
+  { id:22, no:1,  name:"川田",      deptId:"kitchen", active:true,  joinDate:"2024-01-01", leaveDate:"",
+    timeBlocks:[{ id:"bk1a", label:"川田_朝", short:"朝", inH:9, inM:0, outH:13, outM:0, colorIdx:2 }],
+    patterns:[], activePatternId:null },
+  { id:23, no:2,  name:"赤松",      deptId:"kitchen", active:true,  joinDate:"2024-01-01", leaveDate:"",
+    timeBlocks:[{ id:"bk2a", label:"赤松_日", short:"日", inH:9, inM:0, outH:21, outM:0, colorIdx:2 }],
+    patterns:[{id:"pk2",label:"通常",colorIdx:2,days:["bk2a","bk2a","off1","bk2a","bk2a","bk2a","bk2a"]}],
+    activePatternId:"pk2" , periodPatterns:[] },
+  { id:24, no:3,  name:"木戸",      deptId:"kitchen", active:true,  joinDate:"2024-01-01", leaveDate:"",
+    timeBlocks:[{ id:"bk3a", label:"木戸_夜", short:"夜", inH:21, inM:0, outH:9, outM:0, colorIdx:8 }],
+    patterns:[{id:"pk3",label:"夜勤",colorIdx:8,days:["bk3a","off1","bk3a","bk3a","bk3a","bk3a","bk3a"]}],
+    activePatternId:"pk3" , periodPatterns:[] },
+  { id:25, no:4,  name:"木戸Jr",    deptId:"kitchen", active:true,  joinDate:"2024-01-01", leaveDate:"", timeBlocks:[], patterns:[], activePatternId:null, periodPatterns:[] },
+];
+
+// ─── Block lookup helpers ──────────────────────────────────────────────────────
+// Returns block by id, searching: staff personal → global templates → off blocks
+function findBlock(id, staffTimeBlocks=[], globalTemplates=[]) {
+  if (!id) return null;
+  return staffTimeBlocks.find(b=>b.id===id)
+    || globalTemplates.find(b=>b.id===id)
+    || OFF_BLOCKS.find(b=>b.id===id)
+    || null;
+}
+
+// ─── Date helpers ─────────────────────────────────────────────────────────────
+const isToday = d => d.toDateString() === new Date().toDateString();
+
+// ─── TimeBlockForm (reusable - create/edit a single time block) ───────────────
+const SEL = {border:"1.5px solid #dde3ef",borderRadius:6,padding:"3px 8px",fontSize:12,outline:"none",background:"#f8faff",cursor:"pointer",fontFamily:"'DM Sans',sans-serif",fontWeight:600};
+const HH24 = Array.from({length:25},(_,i)=>i);
+const MM30  = [0,30];
+
+function TimeBlockForm({ initial, onSave, onCancel, title="時間テンプレートを作成" }) {
+  const blank = { id:null, label:"", short:"", inH:9, inM:0, outH:18, outM:0, colorIdx:0 };
+  const [form, setForm] = useState(initial ? {...initial} : blank);
+  const f = (k,v) => setForm(p=>({...p,[k]:v}));
+  const hours = calcH(form.inH, form.inM, form.outH, form.outM);
+  const isNight = hours > 12;
+
+  return (
+    <div style={{background:"#fff",border:"2px solid #c9a84c",borderRadius:10,padding:18,marginBottom:14}}>
+      <div style={{fontWeight:700,fontSize:13.5,color:"#0f2044",marginBottom:14}}>{title}</div>
+
+      {/* Preview */}
+      <div style={{display:"flex",alignItems:"center",gap:14,marginBottom:16,padding:"10px 14px",background:"#f8faff",borderRadius:8,border:"1px solid #e2e8f0"}}>
+        <div style={{
+          background:PALETTE[form.colorIdx].bg, color:PALETTE[form.colorIdx].color,
+          border:`2px solid ${PALETTE[form.colorIdx].color}`,
+          borderRadius:7, padding:"6px 12px",
+          display:"flex",flexDirection:"column",alignItems:"center",minWidth:56,
+        }}>
+          <span style={{fontSize:12,fontWeight:700}}>{form.short||"略"}</span>
+          <span style={{fontSize:10,fontFamily:"'DM Sans',sans-serif",fontWeight:600}}>{fmtT(form.inH,form.inM)}</span>
+          <span style={{fontSize:10,fontFamily:"'DM Sans',sans-serif",opacity:.75}}>{fmtT(form.outH,form.outM)}</span>
+        </div>
+        <div>
+          <div style={{fontSize:14,fontWeight:700,color:"#0f2044"}}>{form.label||"（名称未入力）"}</div>
+          <div style={{fontSize:12,color:"#64748b",marginTop:3}}>
+            実働 <strong style={{color:isNight?"#7c3aed":"#0f2044",fontSize:14}}>{hours}h</strong>
+            {hours >= 24 && <span style={{fontSize:10,color:"#7c3aed",marginLeft:6}}>（翌日同時刻）</span>}
+            {hours > 12 && hours < 24 && <span style={{fontSize:10,color:"#6d28d9",marginLeft:6}}>（日跨ぎ）</span>}
+          </div>
+        </div>
+      </div>
+
+      {/* Name row */}
+      <div style={{display:"flex",gap:10,marginBottom:12,flexWrap:"wrap"}}>
+        <div style={{display:"flex",flexDirection:"column",gap:4}}>
+          <label style={{fontSize:11,color:"#64748b",fontWeight:600}}>名称</label>
+          <input value={form.label} onChange={e=>f("label",e.target.value)} placeholder="例：宮本_日勤" autoFocus
+            style={{border:"1.5px solid #dde3ef",borderRadius:6,padding:"6px 10px",fontSize:13,outline:"none",background:"#f8faff",width:180,fontFamily:"'Noto Sans JP',sans-serif"}}/>
+        </div>
+        <div style={{display:"flex",flexDirection:"column",gap:4}}>
+          <label style={{fontSize:11,color:"#64748b",fontWeight:600}}>略称（3文字以内）</label>
+          <input value={form.short} onChange={e=>f("short",e.target.value.slice(0,4))} placeholder="例：日"
+            style={{border:"1.5px solid #dde3ef",borderRadius:6,padding:"6px 10px",fontSize:13,outline:"none",background:"#f8faff",width:90,fontFamily:"'Noto Sans JP',sans-serif"}}/>
+        </div>
+      </div>
+
+      {/* Time row */}
+      <div style={{display:"flex",gap:20,alignItems:"center",marginBottom:14,flexWrap:"wrap"}}>
+        <div style={{display:"flex",alignItems:"center",gap:6}}>
+          <span style={{fontSize:12,fontWeight:700,color:"#0f766e",minWidth:28}}>IN</span>
+          <select value={form.inH} onChange={e=>f("inH",+e.target.value)} style={SEL}>{HH24.map(h=><option key={h} value={h}>{String(h).padStart(2,"0")}</option>)}</select>
+          <span style={{color:"#94a3b8"}}>:</span>
+          <select value={form.inM} onChange={e=>f("inM",+e.target.value)} style={SEL}>{MM30.map(m=><option key={m} value={m}>{String(m).padStart(2,"0")}</option>)}</select>
+        </div>
+        <div style={{display:"flex",alignItems:"center",gap:6}}>
+          <span style={{fontSize:12,fontWeight:700,color:"#dc2626",minWidth:28}}>OUT</span>
+          <select value={form.outH} onChange={e=>f("outH",+e.target.value)} style={SEL}>{HH24.map(h=><option key={h} value={h}>{String(h).padStart(2,"0")}</option>)}</select>
+          <span style={{color:"#94a3b8"}}>:</span>
+          <select value={form.outM} onChange={e=>f("outM",+e.target.value)} style={SEL}>{MM30.map(m=><option key={m} value={m}>{String(m).padStart(2,"0")}</option>)}</select>
+        </div>
+      </div>
+
+      {/* Color */}
+      <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:18}}>
+        <label style={{fontSize:11,color:"#64748b",fontWeight:600,width:50}}>カラー</label>
+        <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
+          {PALETTE.map((c,i)=>(
+            <div key={i} onClick={()=>f("colorIdx",i)} style={{
+              width:22,height:22,borderRadius:"50%",background:c.color,cursor:"pointer",
+              border:form.colorIdx===i?"3px solid #0f2044":"3px solid transparent",transition:"border .1s",
+            }}/>
+          ))}
+        </div>
+      </div>
+
+      <div style={{display:"flex",gap:8}}>
+        <button onClick={()=>onSave({...form,id:form.id||uid()})}
+          disabled={!form.label.trim()||!form.short.trim()}
+          style={{background:form.label&&form.short?"#c9a84c":"#e2e8f0",color:form.label&&form.short?"#0f2044":"#94a3b8",border:"none",padding:"7px 20px",borderRadius:7,fontWeight:700,fontSize:13,cursor:form.label&&form.short?"pointer":"not-allowed",fontFamily:"'Noto Sans JP',sans-serif"}}>
+          保存
+        </button>
+        <button onClick={onCancel}
+          style={{background:"#fff",color:"#0f2044",border:"1.5px solid #dde3ef",padding:"7px 14px",borderRadius:7,fontSize:13,cursor:"pointer",fontFamily:"'Noto Sans JP',sans-serif"}}>
+          キャンセル
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ─── TimeBlockCard (display a single block) ───────────────────────────────────
+function TimeBlockCard({ block, onEdit, onDelete, selected, onClick }) {
+  const c = PALETTE[block.colorIdx];
+  const h = block.inH!=null ? calcH(block.inH,block.inM,block.outH,block.outM) : null;
+  return (
+    <div onClick={onClick} style={{
+      border:`2px solid ${selected?"#0f2044":c.color}`,
+      borderRadius:9, background:selected?"#f0f9ff":c.bg,
+      padding:"10px 12px", cursor:onClick?"pointer":"default",
+      transition:"all .15s", position:"relative",
+    }}>
+      <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:onEdit?8:0}}>
+        {/* Badge */}
+        <div style={{
+          background:"#fff",color:c.color,border:`1.5px solid ${c.color}`,
+          borderRadius:6,padding:"4px 8px",
+          display:"flex",flexDirection:"column",alignItems:"center",minWidth:48,flexShrink:0,
+        }}>
+          <span style={{fontSize:11.5,fontWeight:700}}>{block.short}</span>
+          {block.inH!=null&&<>
+            <span style={{fontSize:8.5,fontFamily:"'DM Sans',sans-serif",fontWeight:600}}>{fmtT(block.inH,block.inM)}</span>
+            <span style={{fontSize:8.5,fontFamily:"'DM Sans',sans-serif",opacity:.7}}>{fmtT(block.outH,block.outM)}</span>
+          </>}
+        </div>
+        {/* Info */}
+        <div style={{flex:1,minWidth:0}}>
+          <div style={{fontSize:12.5,fontWeight:700,color:"#0f2044",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{block.label}</div>
+          {h!=null&&<div style={{fontSize:11,color:c.color,fontWeight:600,marginTop:2}}>{h}h</div>}
+        </div>
+      </div>
+      {/* Edit/Delete buttons */}
+      {onEdit&&(
+        <div style={{display:"flex",gap:5}}>
+          <button onClick={e=>{e.stopPropagation();onEdit();}} style={{flex:1,background:"#fff",color:"#0f2044",border:"1.5px solid #dde3ef",padding:"3px 0",borderRadius:5,fontSize:11,cursor:"pointer",fontFamily:"'Noto Sans JP',sans-serif"}}>編集</button>
+          <button onClick={e=>{e.stopPropagation();onDelete();}} style={{background:"#fee2e2",color:"#dc2626",border:"1.5px solid #fca5a5",padding:"3px 8px",borderRadius:5,fontSize:11,cursor:"pointer"}}>✕</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── GlobalTemplateManager (settings: 共通テンプレート) ───────────────────────
+function GlobalTemplateManager({ globalTemplates, setGlobalTemplates }) {
+  const [creating,setCreating]=useState(false);
+  const [editingId,setEditingId]=useState(null);
+
+  function save(block){
+    setGlobalTemplates(p=>editingId?p.map(t=>t.id===editingId?block:t):[...p,block]);
+    setCreating(false);setEditingId(null);
+  }
+
+  const editTarget = editingId ? globalTemplates.find(t=>t.id===editingId) : null;
+
+  return (
+    <div>
+      <div style={{display:"flex",alignItems:"center",marginBottom:14,gap:8}}>
+        <p style={{fontSize:12.5,color:"#64748b",lineHeight:1.6,flex:1}}>
+          全スタッフが共通で使える時間テンプレートです。週間パターン作成時にすぐ選べます。
+        </p>
+        {!creating&&!editingId&&(
+          <button className="btn gold sm" onClick={()=>{setCreating(true);setEditingId(null);}}>＋ 追加</button>
+        )}
+      </div>
+
+      {(creating||editTarget)&&(
+        <TimeBlockForm
+          initial={editTarget||null}
+          title={editTarget?"共通テンプレートを編集":"共通テンプレートを追加"}
+          onSave={save}
+          onCancel={()=>{setCreating(false);setEditingId(null);}}
+        />
+      )}
+
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(160px,1fr))",gap:10}}>
+        {globalTemplates.map(t=>(
+          <TimeBlockCard key={t.id} block={t}
+            onEdit={()=>{setEditingId(t.id);setCreating(false);}}
+            onDelete={()=>setGlobalTemplates(p=>p.filter(x=>x.id!==t.id))}
+          />
+        ))}
+        {!creating&&!editingId&&(
+          <div onClick={()=>setCreating(true)} style={{
+            border:"2px dashed #dde3ef",borderRadius:9,background:"#fafbff",
+            minHeight:90,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",
+            cursor:"pointer",color:"#94a3b8",gap:4,transition:"all .15s",
+          }}
+          onMouseEnter={e=>e.currentTarget.style.borderColor="#c9a84c"}
+          onMouseLeave={e=>e.currentTarget.style.borderColor="#dde3ef"}>
+            <span style={{fontSize:22}}>＋</span>
+            <span style={{fontSize:11.5,fontWeight:600}}>追加</span>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── StaffTimeBlockManager (per-staff) ────────────────────────────────────────
+function StaffTimeBlockManager({ s, onUpdate }) {
+  const [creating,setCreating]=useState(false);
+  const [editingId,setEditingId]=useState(null);
+
+  function save(block){
+    onUpdate(s.id, prev=>{
+      const blocks = editingId
+        ? prev.timeBlocks.map(b=>b.id===editingId?block:b)
+        : [...prev.timeBlocks, block];
+      return {...prev, timeBlocks:blocks};
+    });
+    setCreating(false);setEditingId(null);
+  }
+  function del(id){
+    onUpdate(s.id,prev=>({...prev,timeBlocks:prev.timeBlocks.filter(b=>b.id!==id)}));
+  }
+
+  const editTarget = editingId ? s.timeBlocks.find(b=>b.id===editingId) : null;
+
+  return (
+    <div style={{padding:"12px 16px",borderBottom:"1px solid #e2e8f0"}}>
+      <div style={{display:"flex",alignItems:"center",marginBottom:10}}>
+        <span style={{fontSize:12,fontWeight:700,color:"#0f2044"}}>
+          個人専用 時間テンプレート
+        </span>
+        <span style={{fontSize:10.5,color:"#94a3b8",marginLeft:6}}>— この人だけが使えます</span>
+        {!creating&&!editingId&&(
+          <button className="btn gold sm" style={{marginLeft:"auto"}} onClick={()=>{setCreating(true);setEditingId(null);}}>
+            ＋ 追加
+          </button>
+        )}
+      </div>
+
+      {(creating||editTarget)&&(
+        <TimeBlockForm
+          initial={editTarget||null}
+          title={`${s.name} の時間テンプレートを${editTarget?"編集":"作成"}`}
+          onSave={save}
+          onCancel={()=>{setCreating(false);setEditingId(null);}}
+        />
+      )}
+
+      {s.timeBlocks.length===0&&!creating&&(
+        <div style={{textAlign:"center",padding:"14px 0",color:"#94a3b8",fontSize:12.5,border:"1.5px dashed #e2e8f0",borderRadius:8}}>
+          個人テンプレートなし — ＋ボタンで追加
+        </div>
+      )}
+
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(150px,1fr))",gap:8}}>
+        {s.timeBlocks.map(b=>(
+          <TimeBlockCard key={b.id} block={b}
+            onEdit={()=>{setEditingId(b.id);setCreating(false);}}
+            onDelete={()=>del(b.id)}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ─── PatternEditor ────────────────────────────────────────────────────────────
+function PatternEditor({ initial, s, globalTemplates, onSave, onCancel }) {
+  const blank={id:null,label:"",days:["","","","","","",""],colorIdx:0,activeFrom:""};
+  const [form,setForm]=useState(initial?{...initial}:blank);
+  const f=(k,v)=>setForm(p=>({...p,[k]:v}));
+  const setDay=(dow,v)=>setForm(p=>{const d=[...p.days];d[dow]=v;return{...p,days:d};});
+
+  // All available blocks for this staff
+  const allBlocks = [...s.timeBlocks, ...globalTemplates, ...OFF_BLOCKS];
+
+  return (
+    <div style={{background:"#fff",border:"1.5px solid #c9a84c",borderRadius:10,padding:18,marginBottom:14}}>
+      <div style={{fontWeight:700,fontSize:13,color:"#0f2044",marginBottom:14}}>
+        {s.name} の週間パターン {initial?"を編集":"を作成"}
+      </div>
+
+      {/* Pattern name + color */}
+      <div style={{display:"flex",gap:10,alignItems:"flex-end",marginBottom:16,flexWrap:"wrap"}}>
+        <div style={{display:"flex",flexDirection:"column",gap:4}}>
+          <label style={{fontSize:11,color:"#64748b",fontWeight:600}}>パターン名</label>
+          <input value={form.label} onChange={e=>f("label",e.target.value)} placeholder="例：通常・夜勤週・Aパターン" autoFocus
+            style={{border:"1.5px solid #dde3ef",borderRadius:6,padding:"6px 10px",fontSize:13,outline:"none",background:"#f8faff",width:200,fontFamily:"'Noto Sans JP',sans-serif"}}/>
+        </div>
+        <div style={{display:"flex",flexDirection:"column",gap:4}}>
+          <label style={{fontSize:11,color:"#64748b",fontWeight:600}}>
+            適用開始日
+            <span style={{fontSize:10,color:"#94a3b8",fontWeight:400,marginLeft:4}}>（空白=デフォルト）</span>
+          </label>
+          <input type="date" value={form.activeFrom||""} onChange={e=>f("activeFrom",e.target.value)}
+            style={{border:"1.5px solid #dde3ef",borderRadius:6,padding:"5px 8px",fontSize:12,outline:"none",background:"#f8faff",...(form.activeFrom?{borderColor:"#c9a84c"}:{})}}/>
+        </div>
+        <div style={{display:"flex",flexDirection:"column",gap:4}}>
+          <label style={{fontSize:11,color:"#64748b",fontWeight:600}}>カラー</label>
+          <div style={{display:"flex",gap:5,paddingBottom:6}}>
+            {PALETTE.map((c,i)=>(
+              <div key={i} onClick={()=>f("colorIdx",i)} style={{width:20,height:20,borderRadius:"50%",background:c.color,cursor:"pointer",border:form.colorIdx===i?"3px solid #0f2044":"3px solid transparent",transition:"border .1s"}}/>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* 7-day grid — Mon first */}
+      <div style={{fontSize:11.5,fontWeight:700,color:"#0f2044",marginBottom:8}}>曜日ごとのシフトを選択</div>
+
+      {/* Block palette (click to select, then click day) */}
+      <div style={{background:"#f8faff",borderRadius:8,padding:"10px 12px",marginBottom:12,border:"1px solid #e2e8f0"}}>
+        <div style={{fontSize:10.5,color:"#64748b",fontWeight:700,marginBottom:8}}>
+          使えるブロック（クリックで曜日に割り当て）
+        </div>
+        {/* Personal blocks */}
+        {s.timeBlocks.length>0&&(
+          <div style={{marginBottom:8}}>
+            <div style={{fontSize:10,color:"#0f766e",fontWeight:700,marginBottom:5}}>👤 個人テンプレート</div>
+            <div style={{display:"flex",flexWrap:"wrap",gap:5}}>
+              {s.timeBlocks.map(b=>{const c=PALETTE[b.colorIdx];return(
+                <DayBlockChip key={b.id} block={b} form={form} setDay={setDay}/>
+              );})}
+            </div>
+          </div>
+        )}
+        {/* Global templates */}
+        <div style={{marginBottom:8}}>
+          <div style={{fontSize:10,color:"#6d28d9",fontWeight:700,marginBottom:5}}>🌐 共通テンプレート</div>
+          <div style={{display:"flex",flexWrap:"wrap",gap:5}}>
+            {globalTemplates.map(b=><DayBlockChip key={b.id} block={b} form={form} setDay={setDay}/>)}
+          </div>
+        </div>
+        {/* Off */}
+        <div>
+          <div style={{fontSize:10,color:"#64748b",fontWeight:700,marginBottom:5}}>休日</div>
+          <div style={{display:"flex",gap:5}}>
+            {OFF_BLOCKS.map(b=><DayBlockChip key={b.id} block={b} form={form} setDay={setDay}/>)}
+          </div>
+        </div>
+      </div>
+
+      {/* 7-day visual */}
+      <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:6,marginBottom:16}}>
+        {[1,2,3,4,5,6,0].map(dow=>{
+          const bid = form.days[dow];
+          const b   = allBlocks.find(x=>x.id===bid);
+          const c   = b ? PALETTE[b.colorIdx] : null;
+          return(
+            <div key={dow} style={{display:"flex",flexDirection:"column",alignItems:"center",gap:4}}>
+              <span style={{fontSize:12,fontWeight:700,color:dow===0?"#dc2626":dow===6?"#2563eb":"#475569"}}>{JP_WD[dow]}</span>
+              {/* Drop zone */}
+              <div style={{
+                width:"100%",minHeight:52,border:`1.5px ${b?"solid":"dashed"} ${c?c.color:"#dde3ef"}`,
+                borderRadius:6,background:b?c.bg:"#fff",
+                display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",
+                cursor:"pointer",padding:"2px",transition:"all .1s",
+              }}>
+                {b?(
+                  <div style={{display:"flex",flexDirection:"column",alignItems:"center",lineHeight:1.3}}>
+                    <span style={{fontSize:10,fontWeight:700,color:c.color}}>{b.short}</span>
+                    {b.inH!=null&&<>
+                      <span style={{fontSize:8.5,color:c.color,fontFamily:"'DM Sans',sans-serif"}}>{fmtT(b.inH,b.inM)}</span>
+                      <span style={{fontSize:8.5,color:c.color,opacity:.7,fontFamily:"'DM Sans',sans-serif"}}>{fmtT(b.outH,b.outM)}</span>
+                    </>}
+                  </div>
+                ):(
+                  <span style={{color:"#e2e8f0",fontSize:16}}>+</span>
+                )}
+              </div>
+              {b&&(
+                <button onClick={()=>setDay(dow,"")} style={{fontSize:9,color:"#94a3b8",background:"none",border:"none",cursor:"pointer",padding:0}}>✕</button>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      <div style={{display:"flex",gap:8}}>
+        <button onClick={()=>onSave(form)} style={{background:"#c9a84c",color:"#0f2044",border:"none",padding:"7px 20px",borderRadius:7,fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"'Noto Sans JP',sans-serif"}}>保存</button>
+        <button onClick={onCancel} style={{background:"#fff",color:"#0f2044",border:"1.5px solid #dde3ef",padding:"7px 14px",borderRadius:7,fontSize:13,cursor:"pointer",fontFamily:"'Noto Sans JP',sans-serif"}}>キャンセル</button>
+      </div>
+    </div>
+  );
+}
+
+// ─── DayBlockChip (click-to-assign chip in PatternEditor) ─────────────────────
+function DayBlockChip({ block, form, setDay }) {
+  const [selectingDow, setSelectingDow] = useState(false);
+  const c = PALETTE[block.colorIdx];
+  const usedIn = [0,1,2,3,4,5,6].filter(d=>form.days[d]===block.id);
+  return (
+    <div style={{position:"relative",display:"inline-block"}}>
+      <div
+        onClick={()=>setSelectingDow(v=>!v)}
+        style={{
+          background:c.bg,color:c.color,border:`1.5px solid ${c.color}`,
+          borderRadius:5,padding:"3px 7px",cursor:"pointer",
+          display:"flex",flexDirection:"column",alignItems:"center",
+          fontSize:9.5,fontWeight:700,minWidth:44,transition:"all .1s",
+          outline:selectingDow?"2.5px solid #0f2044":"none",
+        }}>
+        <span>{block.label}</span>
+        {block.inH!=null&&<span style={{fontSize:8,opacity:.8,fontFamily:"'DM Sans',sans-serif"}}>{fmtT(block.inH,block.inM)}-{fmtT(block.outH,block.outM)}</span>}
+        {usedIn.length>0&&(
+          <div style={{display:"flex",gap:2,marginTop:1}}>
+            {usedIn.map(d=>(
+              <span key={d} style={{
+                fontSize:7.5,background:"#fff",color:c.color,border:`1px solid ${c.color}`,
+                borderRadius:3,padding:"0 2px",fontWeight:700
+              }}>{JP_WD[d]}</span>
+            ))}
+          </div>
+        )}
+      </div>
+      {/* Dow selection popup */}
+      {selectingDow&&(
+        <div style={{
+          position:"absolute",top:"calc(100%+4px)",left:0,zIndex:9999,
+          background:"#fff",border:"1.5px solid #dde3ef",borderRadius:8,
+          boxShadow:"0 8px 24px rgba(15,32,68,.18)",padding:8,
+          display:"flex",gap:4,flexWrap:"wrap",minWidth:150,
+        }}>
+          <div style={{width:"100%",fontSize:10,fontWeight:700,color:"#64748b",marginBottom:4}}>割り当てる曜日</div>
+          {[1,2,3,4,5,6,0].map(dow=>{
+            const isSet=form.days[dow]===block.id;
+            return(
+              <div key={dow} onClick={()=>{setDay(dow,isSet?"":block.id);}}
+                style={{
+                  padding:"4px 7px",borderRadius:5,cursor:"pointer",fontSize:11,fontWeight:700,
+                  background:isSet?c.bg:"#f8faff",color:isSet?c.color:dow===0?"#dc2626":dow===6?"#2563eb":"#475569",
+                  border:`1.5px solid ${isSet?c.color:"#e2e8f0"}`,
+                }}>
+                {JP_WD[dow]}
+              </div>
+            );
+          })}
+          <button onClick={()=>setSelectingDow(false)} style={{width:"100%",marginTop:4,background:"none",border:"none",color:"#94a3b8",cursor:"pointer",fontSize:10}}>閉じる</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+
+// ─── PeriodPatternPanel (期間限定パターン) ────────────────────────────────────
+function PeriodPatternPanel({ s, globalTemplates, onUpdate }) {
+  const [creating, setCreating] = useState(false);
+  const [editingId, setEditingId] = useState(null);
+  const [form, setForm] = useState({id:null,label:"",startDate:"",endDate:"",days:{},colorIdx:3});
+  const f = (k,v) => setForm(p=>({...p,[k]:v}));
+
+  const allBlocks = [...s.timeBlocks,...globalTemplates,...OFF_BLOCKS];
+  const periodPats = s.periodPatterns||[];
+
+  function startCreate(){
+    setForm({id:null,label:"",startDate:"",endDate:"",days:{},colorIdx:3});
+    setCreating(true); setEditingId(null);
+  }
+  function startEdit(pp){
+    setForm({...pp});
+    setEditingId(pp.id); setCreating(false);
+  }
+  function removePeriodPat(pid){
+    onUpdate(s.id, prev=>({...prev, periodPatterns:(prev.periodPatterns||[]).filter(p=>p.id!==pid)}));
+  }
+
+  // 期間内の全日付リスト
+  function parseLocalDate(s){ // "YYYY-MM-DD" をローカル時間で解釈
+    const [y,m,d]=s.split("-").map(Number);
+    return new Date(y,m-1,d);
+  }
+  function getDatesInRange(start,end){
+    if(!start||!end) return [];
+    const dates=[];
+    let cur=parseLocalDate(start);
+    const endD=parseLocalDate(end);
+    while(cur<=endD){
+      const y=cur.getFullYear(),m=String(cur.getMonth()+1).padStart(2,"0"),d=String(cur.getDate()).padStart(2,"0");
+      dates.push(`${y}-${m}-${d}`);
+      cur.setDate(cur.getDate()+1);
+    }
+    return dates;
+  }
+  const rangedDates = getDatesInRange(form.startDate,form.endDate);
+
+  function setDayBlock(dateStr,bid){
+    setForm(p=>({...p,days:{...p.days,[dateStr]:bid}}));
+  }
+
+  function save(){
+    if(!form.label.trim()||!form.startDate||!form.endDate) return;
+    const pp={...form,id:form.id||uid()};
+    onUpdate(s.id,prev=>{
+      const arr=prev.periodPatterns||[];
+      return{...prev,periodPatterns:editingId?arr.map(p=>p.id===editingId?pp:p):[...arr,pp]};
+    });
+    setCreating(false); setEditingId(null);
+  }
+
+  const JP_WD2=["日","月","火","水","木","金","土"];
+
+  return (
+    <div style={{padding:"12px 16px"}}>
+      {/* 作成/編集フォーム */}
+      {(creating||editingId)&&(
+        <div style={{background:"#fff",border:"2px solid #c9a84c",borderRadius:10,padding:16,marginBottom:14}}>
+          <div style={{fontWeight:700,fontSize:13,color:"#0f2044",marginBottom:12}}>
+            {editingId?"期間パターンを編集":"新しい期間限定パターン"}
+            <span style={{fontSize:11,color:"#94a3b8",fontWeight:400,marginLeft:8}}>— GW・年末年始など</span>
+          </div>
+
+          {/* 名前 + 色 */}
+          <div style={{display:"flex",gap:10,marginBottom:12,flexWrap:"wrap",alignItems:"flex-end"}}>
+            <div style={{display:"flex",flexDirection:"column",gap:4}}>
+              <label style={{fontSize:11,color:"#64748b",fontWeight:600}}>名称</label>
+              <input value={form.label} onChange={e=>f("label",e.target.value)} placeholder="例：GW・年末年始"
+                style={{border:"1.5px solid #dde3ef",borderRadius:6,padding:"5px 10px",fontSize:13,outline:"none",background:"#f8faff",width:160,fontFamily:"'Noto Sans JP',sans-serif"}}
+                autoFocus/>
+            </div>
+            <div style={{display:"flex",flexDirection:"column",gap:4}}>
+              <label style={{fontSize:11,color:"#64748b",fontWeight:600}}>期間</label>
+              <div style={{display:"flex",alignItems:"center",gap:6}}>
+                <input type="date" value={form.startDate} onChange={e=>f("startDate",e.target.value)}
+                  style={{...SEL,padding:"5px 8px",fontSize:12}}/>
+                <span style={{color:"#94a3b8",fontSize:12}}>〜</span>
+                <input type="date" value={form.endDate} onChange={e=>f("endDate",e.target.value)}
+                  style={{...SEL,padding:"5px 8px",fontSize:12}}/>
+              </div>
+            </div>
+            <div style={{display:"flex",flexDirection:"column",gap:4}}>
+              <label style={{fontSize:11,color:"#64748b",fontWeight:600}}>カラー</label>
+              <div style={{display:"flex",gap:4,paddingBottom:5}}>
+                {PALETTE.map((c,i)=><div key={i} onClick={()=>f("colorIdx",i)} style={{width:18,height:18,borderRadius:"50%",background:c.color,cursor:"pointer",border:form.colorIdx===i?"3px solid #0f2044":"3px solid transparent"}}/>)}
+              </div>
+            </div>
+          </div>
+
+          {/* 日付ごとのシフト割り当て */}
+          {rangedDates.length>0&&(
+            <div style={{marginBottom:14}}>
+              <div style={{fontSize:11.5,fontWeight:700,color:"#0f2044",marginBottom:8}}>
+                各日のシフトを設定（{rangedDates.length}日間）
+              </div>
+              <div style={{display:"flex",flexWrap:"wrap",gap:5,maxHeight:220,overflowY:"auto",padding:"4px 0"}}>
+                {rangedDates.map(ds=>{
+                  const d=parseLocalDate(ds);
+                  const dow=d.getDay();
+                  const isSun=dow===0; const isSat=dow===6;
+                  const bid=form.days[ds];
+                  const b=bid?allBlocks.find(x=>x.id===bid):null;
+                  const bc=b?PALETTE[b.colorIdx]:null;
+                  return(
+                    <div key={ds} style={{
+                      display:"flex",flexDirection:"column",alignItems:"center",gap:3,
+                      padding:"6px 4px",borderRadius:7,
+                      background:isSun?"#fff5f5":isSat?"#f0f5ff":"#f8faff",
+                      border:`1.5px solid ${bc?bc.color:(isSun?"#fca5a5":isSat?"#93c5fd":"#e2e8f0")}`,
+                      minWidth:52,
+                    }}>
+                      {/* 日付 */}
+                      <span style={{fontSize:9.5,fontWeight:700,color:isSun?"#dc2626":isSat?"#2563eb":"#64748b"}}>
+                        {d.getMonth()+1}/{d.getDate()}
+                      </span>
+                      <span style={{fontSize:9,color:isSun?"#dc2626":isSat?"#2563eb":"#94a3b8"}}>{JP_WD2[dow]}</span>
+                      {/* ブロック選択 */}
+                      <select value={bid||""} onChange={e=>setDayBlock(ds,e.target.value||undefined)} style={{
+                        fontSize:9.5,border:`1px solid ${bc?bc.color:"#dde3ef"}`,borderRadius:4,
+                        padding:"1px 2px",background:bc?bc.bg:"#fff",color:bc?bc.color:"#475569",
+                        outline:"none",cursor:"pointer",maxWidth:52,fontFamily:"'Noto Sans JP',sans-serif",
+                      }}>
+                        <option value="">—</option>
+                        {s.timeBlocks.length>0&&<optgroup label="個人">{s.timeBlocks.map(b=><option key={b.id} value={b.id}>{b.short}</option>)}</optgroup>}
+                        <optgroup label="共通">{globalTemplates.map(b=><option key={b.id} value={b.id}>{b.short}</option>)}</optgroup>
+                        <optgroup label="休日">{OFF_BLOCKS.map(b=><option key={b.id} value={b.id}>{b.short}</option>)}</optgroup>
+                      </select>
+                      {/* 時間表示 */}
+                      {b&&b.inH!=null&&(
+                        <div style={{display:"flex",flexDirection:"column",alignItems:"center",lineHeight:1.3}}>
+                          <span style={{fontSize:8,color:bc.color,fontFamily:"'DM Sans',sans-serif",fontWeight:600}}>{fmtT(b.inH,b.inM)}</span>
+                          <span style={{fontSize:8,color:bc.color,opacity:.75,fontFamily:"'DM Sans',sans-serif"}}>{fmtT(b.outH,b.outM)}</span>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+              {/* 一括設定ボタン */}
+              <div style={{display:"flex",gap:5,flexWrap:"wrap",marginTop:8,padding:"8px 0",borderTop:"1px solid #e2e8f0"}}>
+                <span style={{fontSize:11,color:"#64748b",marginRight:4,alignSelf:"center"}}>一括設定:</span>
+                {[...s.timeBlocks,...globalTemplates,...OFF_BLOCKS].map(b=>{
+                  const c=PALETTE[b.colorIdx];
+                  return(
+                    <button key={b.id} onClick={()=>{
+                      const newDays={};
+                      rangedDates.forEach(ds=>newDays[ds]=b.id);
+                      setForm(p=>({...p,days:{...p.days,...newDays}}));
+                    }} style={{
+                      background:c.bg,color:c.color,border:`1px solid ${c.color}`,
+                      padding:"2px 8px",borderRadius:5,fontSize:10.5,fontWeight:700,cursor:"pointer",
+                    }}>{b.short}</button>
+                  );
+                })}
+                <button onClick={()=>setForm(p=>({...p,days:{}}))} style={{
+                  background:"#fff",color:"#94a3b8",border:"1px solid #dde3ef",
+                  padding:"2px 8px",borderRadius:5,fontSize:10.5,cursor:"pointer",
+                }}>全クリア</button>
+              </div>
+            </div>
+          )}
+          {rangedDates.length===0&&form.startDate&&form.endDate&&(
+            <div style={{color:"#ef4444",fontSize:12,marginBottom:12}}>期間の開始日・終了日を確認してください</div>
+          )}
+          {!form.startDate&&<div style={{color:"#94a3b8",fontSize:12,marginBottom:12}}>↑ 期間を設定すると日付ごとのシフト入力欄が表示されます</div>}
+
+          <div style={{display:"flex",gap:8}}>
+            <button onClick={save} disabled={!form.label||!form.startDate||!form.endDate}
+              style={{background:form.label&&form.startDate&&form.endDate?"#c9a84c":"#e2e8f0",color:form.label&&form.startDate&&form.endDate?"#0f2044":"#94a3b8",border:"none",padding:"7px 20px",borderRadius:7,fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"'Noto Sans JP',sans-serif"}}>
+              保存
+            </button>
+            <button onClick={()=>{setCreating(false);setEditingId(null);}} style={{background:"#fff",color:"#0f2044",border:"1.5px solid #dde3ef",padding:"7px 14px",borderRadius:7,fontSize:13,cursor:"pointer",fontFamily:"'Noto Sans JP',sans-serif"}}>
+              キャンセル
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* 登録済みリスト */}
+      {periodPats.length===0&&!creating&&!editingId&&(
+        <div style={{textAlign:"center",padding:"16px 0",color:"#94a3b8",fontSize:13,border:"1.5px dashed #e2e8f0",borderRadius:8}}>
+          期間限定パターンなし
+        </div>
+      )}
+      <div style={{display:"flex",flexDirection:"column",gap:8}}>
+        {periodPats.map(pp=>{
+          const c=PALETTE[pp.colorIdx];
+          const dates=getDatesInRange(pp.startDate,pp.endDate);
+          const setCount=Object.keys(pp.days).filter(k=>pp.days[k]).length;
+          return(
+            <div key={pp.id} style={{border:`1.5px solid ${c.color}`,borderRadius:9,padding:"10px 12px",background:c.bg}}>
+              <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}>
+                <div>
+                  <span style={{fontWeight:700,fontSize:13,color:c.color}}>{pp.label}</span>
+                  <span style={{fontSize:11,color:"#64748b",marginLeft:8}}>{pp.startDate} 〜 {pp.endDate}</span>
+                  <span style={{fontSize:10,color:"#94a3b8",marginLeft:6}}>（{dates.length}日間・{setCount}日設定済）</span>
+                </div>
+                <div style={{marginLeft:"auto",display:"flex",gap:5}}>
+                  <button onClick={()=>startEdit(pp)} style={{background:"#fff",color:"#0f2044",border:"1.5px solid #dde3ef",padding:"2px 8px",borderRadius:5,fontSize:11,cursor:"pointer"}}>編集</button>
+                  <button onClick={()=>removePeriodPat(pp.id)} style={{background:"#fee2e2",color:"#dc2626",border:"1.5px solid #fca5a5",padding:"2px 8px",borderRadius:5,fontSize:11,cursor:"pointer"}}>削除</button>
+                </div>
+              </div>
+              {/* ミニプレビュー */}
+              <div style={{display:"flex",flexWrap:"wrap",gap:3}}>
+                {dates.slice(0,14).map(ds=>{
+                  const d=new Date(ds);
+                  const dow=d.getDay();
+                  const bid=pp.days[ds];
+                  const b=bid?allBlocks.find(x=>x.id===bid):null;
+                  const bc2=b?PALETTE[b.colorIdx]:null;
+                  return(
+                    <div key={ds} style={{display:"flex",flexDirection:"column",alignItems:"center",gap:1,minWidth:24}}>
+                      <span style={{fontSize:8,color:dow===0?"#dc2626":dow===6?"#2563eb":"#94a3b8"}}>{d.getMonth()+1}/{d.getDate()}</span>
+                      {b?(
+                        <div style={{background:bc2.bg,color:bc2.color,border:`1px solid ${bc2.color}`,borderRadius:3,padding:"0 2px",fontSize:8,fontWeight:700,minWidth:20,textAlign:"center"}}>{b.short}</div>
+                      ):<span style={{fontSize:8,color:"#e2e8f0"}}>—</span>}
+                    </div>
+                  );
+                })}
+                {dates.length>14&&<span style={{fontSize:9,color:"#94a3b8",alignSelf:"flex-end"}}>+{dates.length-14}日</span>}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      {!creating&&!editingId&&(
+        <button onClick={startCreate} style={{marginTop:10,width:"100%",background:"#c9a84c",color:"#0f2044",border:"none",padding:"7px",borderRadius:7,fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"'Noto Sans JP',sans-serif"}}>
+          ＋ 期間限定パターンを作成
+        </button>
+      )}
+    </div>
+  );
+}
+
+// ─── StaffPatternPanel ────────────────────────────────────────────────────────
+function StaffPatternPanel({ s, globalTemplates, onUpdate }) {
+  const [editingId,setEditingId]=useState(null);
+  const [creating,setCreating]=useState(false);
+
+  function savePattern(form){
+    onUpdate(s.id,prev=>{
+      const np={...form,id:form.id||uid()};
+      const patterns=prev.patterns.find(p=>p.id===np.id)
+        ?prev.patterns.map(p=>p.id===np.id?np:p)
+        :[...prev.patterns,np];
+      return{...prev,patterns,activePatternId:prev.activePatternId||np.id};
+    });
+    setEditingId(null);setCreating(false);
+  }
+  function removePattern(pid){
+    onUpdate(s.id,prev=>{
+      const patterns=prev.patterns.filter(p=>p.id!==pid);
+      return{...prev,patterns,activePatternId:prev.activePatternId===pid?(patterns[0]?.id||null):prev.activePatternId};
+    });
+  }
+  const editPat=editingId?s.patterns.find(p=>p.id===editingId):null;
+  const allBlocks=[...s.timeBlocks,...globalTemplates,...OFF_BLOCKS];
+
+  return (
+    <div style={{padding:"12px 16px"}}>
+      {(creating||editPat)&&(
+        <PatternEditor
+          initial={editPat||null}
+          s={s}
+          globalTemplates={globalTemplates}
+          onSave={savePattern}
+          onCancel={()=>{setCreating(false);setEditingId(null);}}
+        />
+      )}
+      {s.patterns.length===0&&!creating&&(
+        <div style={{textAlign:"center",padding:"16px 0",color:"#94a3b8",fontSize:13}}>週間パターンがありません</div>
+      )}
+      <div style={{display:"flex",flexDirection:"column",gap:8}}>
+        {s.patterns.map(p=>{
+          const c=PALETTE[p.colorIdx];const isA=s.activePatternId===p.id;
+          return(
+            <div key={p.id} style={{border:`1.5px solid ${isA?c.color:"#e2e8f0"}`,borderRadius:9,padding:"10px 12px",background:isA?c.bg:"#fafbff"}}>
+              <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
+                <div>
+                  <span style={{fontWeight:700,fontSize:13,color:isA?c.color:"#0f2044"}}>{p.label}</span>
+                  {isA&&<span style={{fontSize:10,color:c.color,fontWeight:700,marginLeft:8}}>✓ 適用中</span>}
+                  {p.activeFrom&&<span style={{fontSize:10,color:"#c9a84c",fontWeight:700,marginLeft:6,background:"#fffbf0",border:"1px solid #c9a84c",padding:"0 5px",borderRadius:4}}>{p.activeFrom}〜</span>}
+                  {!p.activeFrom&&<span style={{fontSize:10,color:"#94a3b8",marginLeft:6}}>デフォルト</span>}
+                </div>
+                <div style={{marginLeft:"auto",display:"flex",gap:5}}>
+                  {!isA&&<button onClick={()=>onUpdate(s.id,prev=>({...prev,activePatternId:p.id}))} style={{background:c.bg,color:c.color,border:`1.5px solid ${c.color}`,padding:"2px 8px",borderRadius:5,fontSize:11,fontWeight:700,cursor:"pointer"}}>適用</button>}
+                  <button onClick={()=>{setEditingId(p.id);setCreating(false);}} style={{background:"#fff",color:"#0f2044",border:"1.5px solid #dde3ef",padding:"2px 8px",borderRadius:5,fontSize:11,cursor:"pointer"}}>編集</button>
+                  <button onClick={()=>removePattern(p.id)} style={{background:"#fee2e2",color:"#dc2626",border:"1.5px solid #fca5a5",padding:"2px 8px",borderRadius:5,fontSize:11,cursor:"pointer"}}>削除</button>
+                </div>
+              </div>
+              {/* 7-day preview */}
+              <div style={{display:"flex",gap:4}}>
+                {[1,2,3,4,5,6,0].map(dow=>{
+                  const bid=p.days[dow];
+                  const b=bid?allBlocks.find(x=>x.id===bid):null;
+                  const bc=b?PALETTE[b.colorIdx]:null;
+                  return(
+                    <div key={dow} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:2}}>
+                      <span style={{fontSize:9,fontWeight:700,color:dow===0?"#dc2626":dow===6?"#2563eb":"#64748b"}}>{JP_WD[dow]}</span>
+                      {b?(
+                        <div style={{background:bc.bg,color:bc.color,border:`1px solid ${bc.color}`,borderRadius:3,padding:"1px 2px",fontSize:7.5,fontWeight:700,textAlign:"center",width:"100%",lineHeight:1.4}}>
+                          {b.short}
+                        </div>
+                      ):<span style={{fontSize:9,color:"#e2e8f0"}}>—</span>}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      {!creating&&!editingId&&(
+        <button onClick={()=>{setCreating(true);setEditingId(null);}} style={{marginTop:10,width:"100%",background:"#c9a84c",color:"#0f2044",border:"none",padding:"7px",borderRadius:7,fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"'Noto Sans JP',sans-serif"}}>
+          ＋ 週間パターンを作成
+        </button>
+      )}
+    </div>
+  );
+}
+
+
+// ─── DirectTimeInput ──────────────────────────────────────────────────────────
+function DirectTimeInput({ onApply, onClose }) {
+  const [inTime,  setInTime]  = useState("");
+  const [outTime, setOutTime] = useState("");
+  const [open, setOpen] = useState(false);
+
+  const HH = Array.from({length:25},(_,i)=>i);
+  const MM = [0,30];
+
+  function parseTime(str){ // "HH:MM" → {h,m}
+    if(!str) return null;
+    const [h,m] = str.split(":").map(Number);
+    return {h,m};
+  }
+
+  const inP  = parseTime(inTime);
+  const outP = parseTime(outTime);
+  const hours = (inP&&outP) ? calcH(inP.h,inP.m,outP.h,outP.m) : null;
+
+  function apply(){
+    if(!inTime||!outTime) return;
+    onApply(inTime, outTime);
+    onClose();
+  }
+
+  if(!open) return (
+    <div style={{borderTop:"1px solid #f1f5f9",padding:"8px 0 4px"}}>
+      <button onClick={()=>setOpen(true)} style={{
+        width:"100%",background:"#f8faff",border:"1.5px dashed #dde3ef",
+        borderRadius:7,padding:"7px",cursor:"pointer",
+        fontSize:12.5,color:"#64748b",fontFamily:"'Noto Sans JP',sans-serif",
+        display:"flex",alignItems:"center",justifyContent:"center",gap:6,
+      }}>
+        ✏️ この日だけ直接時刻入力
+      </button>
+    </div>
+  );
+
+  return (
+    <div style={{borderTop:"1px solid #f1f5f9",padding:"12px 0 4px"}}>
+      <div style={{fontSize:12,fontWeight:700,color:"#0f2044",marginBottom:10,display:"flex",alignItems:"center",gap:6}}>
+        ✏️ この日だけ直接入力
+        <span style={{fontSize:10.5,color:"#94a3b8",fontWeight:400}}>— テンプレートは使わない</span>
+      </div>
+      <div style={{display:"flex",gap:16,alignItems:"center",marginBottom:10,flexWrap:"wrap"}}>
+        {/* IN */}
+        <div style={{display:"flex",alignItems:"center",gap:6}}>
+          <span style={{fontSize:12,fontWeight:700,color:"#0f766e",minWidth:20}}>入</span>
+          <select value={inP?.h??""} onChange={e=>setInTime(e.target.value!==""?`${String(e.target.value).padStart(2,"0")}:${String(inP?.m??0).padStart(2,"0")}`:"")} style={{...SEL}}>
+            <option value="">--</option>
+            {HH.map(h=><option key={h} value={h}>{String(h).padStart(2,"0")}</option>)}
+          </select>
+          <span style={{color:"#94a3b8"}}>:</span>
+          <select value={inP?.m??""} onChange={e=>setInTime(inP?`${String(inP.h).padStart(2,"0")}:${String(e.target.value).padStart(2,"0")}`:"")} style={{...SEL}}>
+            <option value="">--</option>
+            {MM.map(m=><option key={m} value={m}>{String(m).padStart(2,"0")}</option>)}
+          </select>
+        </div>
+        {/* OUT */}
+        <div style={{display:"flex",alignItems:"center",gap:6}}>
+          <span style={{fontSize:12,fontWeight:700,color:"#dc2626",minWidth:20}}>出</span>
+          <select value={outP?.h??""} onChange={e=>setOutTime(e.target.value!==""?`${String(e.target.value).padStart(2,"0")}:${String(outP?.m??0).padStart(2,"0")}`:"")} style={{...SEL}}>
+            <option value="">--</option>
+            {HH.map(h=><option key={h} value={h}>{String(h).padStart(2,"0")}</option>)}
+          </select>
+          <span style={{color:"#94a3b8"}}>:</span>
+          <select value={outP?.m??""} onChange={e=>setOutTime(outP?`${String(outP.h).padStart(2,"0")}:${String(e.target.value).padStart(2,"0")}`:"")} style={{...SEL}}>
+            <option value="">--</option>
+            {MM.map(m=><option key={m} value={m}>{String(m).padStart(2,"0")}</option>)}
+          </select>
+        </div>
+        {/* 実働時間 */}
+        {hours!==null&&(
+          <span style={{fontSize:12,color:"#64748b"}}>
+            → <strong style={{color:"#0f2044"}}>{hours}h</strong>
+          </span>
+        )}
+      </div>
+      <div style={{display:"flex",gap:6}}>
+        <button onClick={apply} disabled={!inTime||!outTime} style={{
+          background:inTime&&outTime?"#c9a84c":"#e2e8f0",
+          color:inTime&&outTime?"#0f2044":"#94a3b8",
+          border:"none",padding:"6px 18px",borderRadius:7,
+          fontWeight:700,fontSize:12.5,cursor:inTime&&outTime?"pointer":"not-allowed",
+          fontFamily:"'Noto Sans JP',sans-serif",
+        }}>適用</button>
+        <button onClick={()=>setOpen(false)} style={{
+          background:"#fff",color:"#64748b",border:"1.5px solid #dde3ef",
+          padding:"6px 12px",borderRadius:7,fontSize:12,cursor:"pointer",
+          fontFamily:"'Noto Sans JP',sans-serif",
+        }}>キャンセル</button>
+      </div>
+    </div>
+  );
+}
+
+// ─── CellPicker (shared between WeekCell & MonthCell) ─────────────────────────
+function CellPicker({ pos, s, globalTemplates, currentBlockId, onSelect, onSelectCustomTime, onClose }) {
+  const [search,setSearch]=useState("");
+  const ref=useRef(null);
+  useEffect(()=>{
+    const h=e=>{if(ref.current&&!ref.current.contains(e.target))onClose();};
+    const k=e=>{if(e.key==="Escape")onClose();};
+    document.addEventListener("mousedown",h);document.addEventListener("keydown",k);
+    return()=>{document.removeEventListener("mousedown",h);document.removeEventListener("keydown",k);};
+  },[onClose]);
+  // 画面中央固定（posは使わない）
+  const top = "50%";
+  const left = "50%";
+
+  const personalFiltered = search
+    ? s.timeBlocks.filter(b=>b.label.includes(search)||b.short.includes(search))
+    : s.timeBlocks;
+  const globalFiltered = search
+    ? globalTemplates.filter(b=>b.label.includes(search)||b.short.includes(search))
+    : globalTemplates;
+
+  function Block({b,small}){
+    const c=PALETTE[b.colorIdx];const sel=currentBlockId===b.id;
+    return(
+      <div onClick={()=>onSelect(b)} style={{
+        background:sel?c.bg:"transparent",color:c.color,
+        border:`1.5px ${sel?"solid":"dashed"} ${c.color}`,
+        borderRadius:7,padding:"6px 10px",cursor:"pointer",
+        display:"flex",flexDirection:"column",alignItems:"center",
+        fontSize:11,fontWeight:700,minWidth:60,transition:"all .1s",
+      }}>
+        <span>{b.label}</span>
+        {b.inH!=null&&<>
+          <span style={{fontSize:10,fontFamily:"'DM Sans',sans-serif",fontWeight:600}}>{fmtT(b.inH,b.inM)}</span>
+          <span style={{fontSize:10,opacity:.7,fontFamily:"'DM Sans',sans-serif"}}>{fmtT(b.outH,b.outM)}</span>
+        </>}
+      </div>
+    );
+  }
+
+  return(
+    <>
+    <div onClick={onClose} style={{position:"fixed",inset:0,background:"rgba(0,0,0,.4)",zIndex:9998}}/>
+    <div ref={ref} style={{
+      position:"fixed",top:"50%",left:"50%",
+      transform:"translate(-50%,-50%)",
+      zIndex:9999,background:"#fff",
+      border:"1.5px solid #dde3ef",borderRadius:12,
+      boxShadow:"0 20px 60px rgba(15,32,68,.35)",
+      padding:"20px",
+      width:"min(480px, 90vw)",
+      maxHeight:"80vh",overflowY:"auto",
+    }}>
+      <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="検索..." autoFocus
+        style={{width:"100%",border:"1.5px solid #dde3ef",borderRadius:6,padding:"4px 8px",fontSize:11.5,outline:"none",background:"#f8faff",marginBottom:10,fontFamily:"'Noto Sans JP',sans-serif"}}/>
+
+      {/* Personal */}
+      {personalFiltered.length>0&&(
+        <div style={{marginBottom:10}}>
+          <div style={{fontSize:11.5,fontWeight:700,color:"#0f766e",marginBottom:8,letterSpacing:".02em"}}>👤 {s.name} の個人テンプレート</div>
+          <div style={{display:"flex",flexWrap:"wrap",gap:4}}>{personalFiltered.map(b=><Block key={b.id} b={b}/>)}</div>
+        </div>
+      )}
+
+      {/* Global */}
+      {globalFiltered.length>0&&(
+        <div style={{marginBottom:10}}>
+          <div style={{fontSize:11.5,fontWeight:700,color:"#6d28d9",marginBottom:8,letterSpacing:".02em"}}>🌐 共通テンプレート</div>
+          <div style={{display:"flex",flexWrap:"wrap",gap:4,maxHeight:100,overflowY:"auto"}}>{globalFiltered.map(b=><Block key={b.id} b={b}/>)}</div>
+        </div>
+      )}
+
+      {/* Off */}
+      {!search&&(
+        <div style={{marginBottom:8}}>
+          <div style={{fontSize:9.5,fontWeight:700,color:"#94a3b8",marginBottom:5}}>休日</div>
+          <div style={{display:"flex",gap:4}}>
+            {OFF_BLOCKS.map(b=>{const c=PALETTE[b.colorIdx];const sel=currentBlockId===b.id;return(
+              <div key={b.id} onClick={()=>onSelect(b)} style={{background:sel?c.bg:"transparent",color:c.color,border:`1.5px ${sel?"solid":"dashed"} ${c.color}`,borderRadius:5,padding:"4px 10px",cursor:"pointer",fontSize:11,fontWeight:700}}>{b.label}</div>
+            );})}
+          </div>
+        </div>
+      )}
+      {/* 直接時刻入力 */}
+      {!search&&<DirectTimeInput onApply={onSelectCustomTime} onClose={onClose}/>}
+      <div style={{borderTop:"1px solid #f1f5f9",paddingTop:6,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+        <button onClick={()=>onSelect(null)} style={{fontSize:12,color:"#94a3b8",background:"none",border:"none",cursor:"pointer"}}>✕ クリア</button>
+        <button onClick={onClose} style={{fontSize:12,color:"#fff",background:"#0f2044",border:"none",borderRadius:6,padding:"4px 14px",cursor:"pointer",fontFamily:"'Noto Sans JP',sans-serif"}}>閉じる</button>
+      </div>
+    </div>
+    </>
+  );
+}
+
+// ─── ShiftCell (weekly/monthly shared) ────────────────────────────────────────
+function ShiftCell({ s, dateObj, globalTemplates, cellData, setCellData, getEffective, clearCell, mode="month" }) {
+  const [pp,setPP]=useState(null);
+
+  // 退職日チェック: 退職日が設定されていてその日より後ならグレーアウト
+  const leaveDate = s.leaveDate ? new Date(s.leaveDate) : null;
+  const isAfterLeave = leaveDate && dateObj > leaveDate;
+
+  const eff=isAfterLeave ? null : getEffective(s,dateObj);
+  const b=eff?.blockId?findBlock(eff.blockId,s.timeBlocks,globalTemplates):null;
+  const bc=b?PALETTE[b.colorIdx]:null;
+  const isSun=dateObj.getDay()===0;const isSat=dateObj.getDay()===6;const tod=isToday(dateObj);
+  const auto=eff?.auto;
+  const bg=isAfterLeave?"#f1f5f9":(eff?.isOff?bc?.bg:(isSun?"#fff5f5":isSat?"#f0f5ff":"#fff"));
+
+  function handleSelect(block){
+    if(!block){clearCell(s.id,dateObj);return;}
+    if(block.inH===null){
+      setCellData(prev=>{const k=`${s.id}|${dateObj.toISOString().slice(0,10)}`;return{...prev,[k]:{inTime:"",outTime:"",blockId:block.id,isOff:true,auto:false}};});
+    } else {
+      setCellData(prev=>{const k=`${s.id}|${dateObj.toISOString().slice(0,10)}`;return{...prev,[k]:{inTime:fmtT(block.inH,block.inM),outTime:fmtT(block.outH,block.outM),blockId:block.id,isOff:false,auto:false}};});
+    }
+    setPP(null);
+  }
+
+  function handleSelectCustomTime(inTime, outTime){
+    const dStr=dateObj.toISOString().slice(0,10); // ck()と同じUTC形式で統一
+    setCellData(prev=>({...prev,[`${s.id}|${dStr}`]:{inTime,outTime,blockId:null,isOff:false,auto:false}}));
+    setPP(null);
+  }
+
+  const W=mode==="week"?80:52;
+
+  return (
+    <>
+      <td
+        onClick={isAfterLeave?undefined:e=>{const r=e.currentTarget.getBoundingClientRect();setPP({bottom:r.bottom,left:r.left});}}
+        style={{
+          height:mode==="week"?58:52,textAlign:"center",cursor:isAfterLeave?"default":"pointer",padding:2,
+          background:bg,outline:tod&&!isAfterLeave?"2px solid #c9a84c":"none",outlineOffset:"-2px",
+          verticalAlign:"middle",border:"1px solid #e2e8f0",position:"relative",userSelect:"none",
+          minWidth:W,width:W,
+          opacity:isAfterLeave?0.35:1,
+        }}
+        onMouseEnter={isAfterLeave?undefined:e=>e.currentTarget.style.filter="brightness(.92)"}
+        onMouseLeave={isAfterLeave?undefined:e=>e.currentTarget.style.filter=""}
+      >
+        {isAfterLeave?(
+          <span style={{color:"#cbd5e1",fontSize:11}}>－</span>
+        ):eff?.isOff?(
+          <div style={{display:"flex",flexDirection:"column",alignItems:"center"}}>
+            <span style={{fontSize:11,fontWeight:700,color:bc?.color}}>{b?.short}</span>
+          </div>
+        ):eff?(
+          <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:0,lineHeight:1.45}}>
+            <span style={{fontSize:9.5,fontWeight:700,color:"#0f766e",fontFamily:"'DM Sans',sans-serif"}}>{eff.inTime||"—"}</span>
+            <span style={{fontSize:9.5,fontWeight:700,color:"#dc2626",fontFamily:"'DM Sans',sans-serif"}}>{eff.outTime||"—"}</span>
+          </div>
+        ):(
+          <span style={{color:"#e2e8f0",fontSize:16}}>+</span>
+        )}
+        {/* Auto dot */}
+        {auto&&eff&&<span style={{position:"absolute",top:2,right:2,width:4,height:4,borderRadius:"50%",background:"#c9a84c"}}/>}
+        {/* Block label */}
+        {bc&&eff&&<span style={{position:"absolute",bottom:1,left:0,right:0,textAlign:"center",fontSize:7,color:bc.color,fontWeight:700}}>{b?.short}</span>}
+      </td>
+      {pp&&ReactDOM.createPortal(
+        <CellPicker pos={pp} s={s} globalTemplates={globalTemplates} currentBlockId={eff?.blockId} onSelect={handleSelect} onSelectCustomTime={handleSelectCustomTime} onClose={()=>setPP(null)}/>,
+        document.body
+      )}
+    </>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ─── Main App ─────────────────────────────────────────────────────────────────
+// ══════════════════════════════════════════════════════════════════════════════
+function ShiftApp() {
+  const today=new Date();
+  const [viewMode,setViewMode]=useState("weekly");
+  const [weekStart,setWeekStart]=useState(getMondayOf(today));
+  const [year,setYear]=useState(today.getFullYear());
+  const [month,setMonth]=useState(today.getMonth());
+  const [depts]=useState(INIT_DEPTS);
+  const [staff,setStaff]=useState(INIT_STAFF);
+  const [globalTemplates,setGlobalTemplates]=useState(INIT_GLOBAL_TEMPLATES);
+  const [cellData,setCellData]=useState({});
+  const [dbStatus,setDbStatus]=useState("init"); // "init"|"loading"|"ok"|"offline"|"saving"
+  const saveTimer = useRef(null);
+  const [view,setView]=useState("grid");
+  const [settingsTab,setSettingsTab]=useState("staff");
+  const [openStaffId,setOpenStaffId]=useState(null);
+  const [staffSettingSection,setStaffSettingSection]=useState("patterns"); // "patterns" | "timeblocks"
+  const [addingStaff,setAddingStaff]=useState(false);
+  const [newStaff,setNewStaff]=useState({name:"",deptId:"front"});
+  const [showInactive,setShowInactive]=useState(false);
+  const [showPrint,setShowPrint]=useState(false);
+  const [showManual,setShowManual]=useState(false);
+  const dragStaffId = useRef(null);
+  const [dragOverId,setDragOverId]=useState(null);
+  const nextId=useRef(400);
+
+  // Supabase からデータをロード
+  useEffect(()=>{
+    if (!sbClient) { setDbStatus("offline"); return; }
+    setDbStatus("loading");
+    Promise.all([
+      dbLoad("staff"),
+      dbLoad("globalTemplates"),
+      dbLoad("cellData"),
+    ]).then(([s,g,c])=>{
+      if (s) setStaff(s);
+      if (g) setGlobalTemplates(g);
+      if (c) setCellData(c);
+      setDbStatus("ok");
+    }).catch(()=>setDbStatus("offline"));
+  },[]);
+
+  // 変更を自動保存（1秒デバウンス）
+  useEffect(()=>{
+    if (dbStatus==="loading"||dbStatus==="init"||dbStatus==="offline") return;
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    setDbStatus("saving");
+    saveTimer.current = setTimeout(async ()=>{
+      await Promise.all([
+        dbSave("staff", staff),
+        dbSave("globalTemplates", globalTemplates),
+        dbSave("cellData", cellData),
+      ]);
+      setDbStatus("ok");
+    }, 1200);
+  },[staff,globalTemplates,cellData]);
+
+  const weekDates=useMemo(()=>getWeekDates(weekStart),[weekStart]);
+  const monthDates=useMemo(()=>Array.from({length:getDays(year,month)},(_,i)=>new Date(year,month,i+1)),[year,month]);
+  const headerDates=viewMode==="weekly"?weekDates:monthDates;
+
+  // Cell key = staffId|YYYY-MM-DD
+  const ck=(sid,d)=>`${sid}|${d.toISOString().slice(0,10)}`;
+
+  function getEffective(s,dateObj){
+    const key=ck(s.id,dateObj);
+    if(cellData[key]!==undefined) return {...cellData[key],auto:false};
+
+    // 期間限定パターンを優先チェック（日付範囲に一致するものを検索）
+    // ローカル日付文字列（タイムゾーンずれ防止）
+    const dStr=`${dateObj.getFullYear()}-${String(dateObj.getMonth()+1).padStart(2,"0")}-${String(dateObj.getDate()).padStart(2,"0")}`;
+    const periodPats = s.periodPatterns||[];
+    const matchPeriod = periodPats.find(pp=>{
+      if(!pp.startDate||!pp.endDate) return false;
+      return dStr>=pp.startDate && dStr<=pp.endDate;
+    });
+    if(matchPeriod){
+      // 期間パターン: days は日付文字列→blockId のマップ
+      const bid = matchPeriod.days[dStr];
+      if(bid===undefined){
+        // 期間内だがその日の設定なし → 空欄扱い（週間パターンは使わない）
+        return null;
+      }
+      if(!bid) return null;
+      const b=findBlock(bid,s.timeBlocks,globalTemplates);
+      if(!b) return null;
+      if(b.inH===null) return {inTime:"",outTime:"",blockId:bid,isOff:true,auto:true,isPeriod:true};
+      return {inTime:fmtT(b.inH,b.inM),outTime:fmtT(b.outH,b.outM),blockId:bid,isOff:false,auto:true,isPeriod:true};
+    }
+
+    // 週間パターン: activeFrom が最も新しく dStr 以前のパターンを選ぶ
+    // activeFrom なし = デフォルト（最低優先）
+    let pat = null;
+    let bestFrom = null; // null = 最も古い
+    for (const p of s.patterns) {
+      const from = p.activeFrom || null;
+      if (from && from > dStr) continue; // まだ始まっていない
+      // fromが新しい方を優先
+      if (pat === null) { pat = p; bestFrom = from; continue; }
+      if (from === null && bestFrom !== null) continue; // デフォルトより日付指定を優先
+      if (from !== null && bestFrom === null) { pat = p; bestFrom = from; continue; }
+      if (from > bestFrom) { pat = p; bestFrom = from; }
+    }
+    // activeFrom なしのパターンが複数ある場合は activePatternId で絞る
+    if (!pat || (!bestFrom && s.patterns.filter(p=>!p.activeFrom).length > 1)) {
+      if (s.activePatternId) {
+        const ap = s.patterns.find(p=>p.id===s.activePatternId);
+        if (ap && (!ap.activeFrom || ap.activeFrom <= dStr)) pat = ap;
+      }
+    }
+    if(!pat) return null;
+    const bid=pat.days[dateObj.getDay()];
+    if(!bid) return null;
+    const b=findBlock(bid,s.timeBlocks,globalTemplates);
+    if(!b) return null;
+    if(b.inH===null) return {inTime:"",outTime:"",blockId:bid,isOff:true,auto:true,patLabel:pat.label};
+    return {inTime:fmtT(b.inH,b.inM),outTime:fmtT(b.outH,b.outM),blockId:bid,isOff:false,auto:true,patLabel:pat.label};
+  }
+
+  function clearCell(sid,dateObj){
+    setCellData(prev=>{const n={...prev};delete n[ck(sid,dateObj)];return n;});
+  }
+
+  function updateStaff(id,fn){setStaff(p=>p.map(s=>s.id===id?fn(s):s));}
+
+  // 同部署内でスタッフを上下移動して no を振り直す
+  function moveStaff(id, dir) {
+    setStaff(prev => {
+      const s = prev.find(x=>x.id===id);
+      if (!s) return prev;
+      const deptStaff = prev.filter(x=>x.deptId===s.deptId).sort((a,b)=>a.no-b.no);
+      const idx = deptStaff.findIndex(x=>x.id===id);
+      const newIdx = idx + dir;
+      if (newIdx < 0 || newIdx >= deptStaff.length) return prev;
+      const newOrder = [...deptStaff];
+      [newOrder[idx], newOrder[newIdx]] = [newOrder[newIdx], newOrder[idx]];
+      const noMap = {};
+      newOrder.forEach((x,i) => noMap[x.id] = i+1);
+      return prev.map(x => x.deptId===s.deptId ? {...x, no:noMap[x.id]} : x);
+    });
+  }
+
+  // D&D: ドロップ時に同部署内で並び替え
+  function handleDrop(targetId) {
+    const fromId = dragStaffId.current;
+    if (!fromId || fromId===targetId) { setDragOverId(null); return; }
+    setStaff(prev => {
+      const from = prev.find(x=>x.id===fromId);
+      const to   = prev.find(x=>x.id===targetId);
+      if (!from||!to||from.deptId!==to.deptId) return prev;
+      const deptStaff = prev.filter(x=>x.deptId===from.deptId).sort((a,b)=>a.no-b.no);
+      const fromIdx = deptStaff.findIndex(x=>x.id===fromId);
+      const toIdx   = deptStaff.findIndex(x=>x.id===targetId);
+      const newOrder = [...deptStaff];
+      newOrder.splice(fromIdx,1);
+      newOrder.splice(toIdx,0,from);
+      const noMap = {};
+      newOrder.forEach((x,i) => noMap[x.id] = i+1);
+      return prev.map(x => x.deptId===from.deptId ? {...x, no:noMap[x.id]} : x);
+    });
+    dragStaffId.current=null;
+    setDragOverId(null);
+  }
+
+  function addStaff(){
+    if(!newStaff.name.trim())return;
+    const maxNo=staff.filter(s=>s.deptId===newStaff.deptId).reduce((m,s)=>Math.max(m,s.no),0);
+    setStaff(p=>[...p,{id:nextId.current++,no:maxNo+1,name:newStaff.name.trim(),deptId:newStaff.deptId,active:true,joinDate:"",leaveDate:"",timeBlocks:[],patterns:[],activePatternId:null,periodPatterns:[]}]);
+    setNewStaff({name:"",deptId:"front"});setAddingStaff(false);
+  }
+
+  function prevWeek(){const d=new Date(weekStart);d.setDate(d.getDate()-7);setWeekStart(d);}
+  function nextWeek(){const d=new Date(weekStart);d.setDate(d.getDate()+7);setWeekStart(d);}
+  function prevMonth(){if(month===0){setYear(y=>y-1);setMonth(11);}else setMonth(m=>m-1);}
+  function nextMonth(){if(month===11){setYear(y=>y+1);setMonth(0);}else setMonth(m=>m+1);}
+
+  const visibleStaff=useMemo(()=>staff.filter(s=>{
+    if (showInactive) return true;
+    if (!s.leaveDate) return s.active;
+    // 退職日がある場合: 退職月（当月含む）は表示、翌月以降は非表示
+    const ld = new Date(s.leaveDate);
+    const leaveYear  = ld.getFullYear();
+    const leaveMonth = ld.getMonth();
+    // 表示中の月が退職月以前なら表示
+    if (year < leaveYear) return true;
+    if (year === leaveYear && month <= leaveMonth) return true;
+    return false; // 翌月以降は非表示
+  }),[staff,showInactive,year,month]);
+  const staffByDept=useMemo(()=>depts.map(d=>({...d,members:[...visibleStaff.filter(s=>s.deptId===d.id)].sort((a,b)=>a.no-b.no)})),[depts,visibleStaff]);
+
+  // Monthly summary
+  // 休憩控除: 実労6.5h以上の場合は1h引く
+  function calcNetH(ih,im,oh,om){
+    const raw=calcH(ih,im,oh,om);
+    if (raw>=6.5) return +(raw-1).toFixed(1);   // 6.5h以上 → 1h控除
+    if (raw>=4.5) return +(raw-0.5).toFixed(1); // 4.5h〜6.5h未満 → 0.5h控除
+    return raw;                                  // 4.5h未満 → 控除なし
+  }
+
+  const summary=useMemo(()=>staff.map(s=>{
+    let totalH=0,workDays=0;
+    monthDates.forEach(d=>{
+      const eff=getEffective(s,d);
+      if(!eff||eff.isOff) return;
+      if(eff.inTime&&eff.outTime){
+        const [ih,im]=eff.inTime.split(":").map(Number);
+        const [oh,om]=eff.outTime.split(":").map(Number);
+        workDays++;totalH+=calcNetH(ih,im,oh,om);
+      }
+    });
+    return{...s,workDays,totalH:+totalH.toFixed(1)};
+  }),[staff,cellData,globalTemplates,year,month]);
+
+  const weekLabel=`${weekDates[0].getFullYear()}年 ${weekDates[0].getMonth()+1}月${weekDates[0].getDate()}日（月）〜 ${weekDates[6].getMonth()+1}月${weekDates[6].getDate()}日（日）`;
+
+// ─── ManualModal ──────────────────────────────────────────────────────────────
+function ManualModal({ onClose }) {
+  const sections = [
+    {
+      icon:"📱", title:"基本的な使い方",
+      items:[
+        ["週 / 月 切り替え", "ヘッダーの「週」「月」ボタンで切り替え。週表示は月〜日の7列、月表示は1〜31日の全月表示です。"],
+        ["シフトを入力する", "セルをクリックするとシフト選択モーダルが画面中央に開きます。個人テンプレート・共通テンプレート・休日（公休/有休/当欠）から選択できます。検索ボックスでテンプレートを絞り込めます。"],
+        ["この日だけ直接入力", "モーダル下部の「✏️ この日だけ直接時刻入力」から、テンプレートを使わずにIN/OUT時刻を直接入力できます（30分刻み）。"],
+        ["入力をクリアする", "モーダル下部の「✕ クリア」でセルの入力を消去してパターン自動入力に戻ります。"],
+        ["🟡 黄色い点", "週間パターンから自動入力されたセルを示します。手動で変更するとドットが消えます。"],
+        ["固定表示", "No・氏名・入出列は左固定、日付行は上固定、合計列は右固定です。スクロールしても常に見えます。"],
+      ]
+    },
+    {
+      icon:"⏱", title:"時間テンプレートの管理",
+      items:[
+        ["個人テンプレート", "設定 → スタッフ → ⏱ 個人時間テンプレート で、そのスタッフだけが使える時間帯を登録します。名称・略称（3文字以内）・IN/OUT時刻・カラーを設定します。"],
+        ["共通テンプレート", "設定 → 🌐 共通テンプレート で、全スタッフが使える時間テンプレートを管理します。"],
+        ["優先表示順", "シフト選択モーダルでは「個人テンプレート → 共通テンプレート → 休日」の順で表示されます。"],
+        ["略称", "シフトセルの下部に表示される識別子です。3文字以内で設定してください（例：日・夜・12）。"],
+      ]
+    },
+    {
+      icon:"📅", title:"週間パターン",
+      items:[
+        ["パターンの作成", "設定 → スタッフ → 📅 週間パターン → 「＋ 週間パターンを作成」で作成します。"],
+        ["ブロックの割り当て", "パターン編集画面でブロックチップをクリックすると曜日選択ポップアップが表示されます。割り当てたい曜日をクリックして設定してください。"],
+        ["適用開始日", "パターンに「適用開始日」を設定すると、その日付以降だけそのパターンが適用されます。月途中からシフトが変わる場合に使います。例：4/16〜 に新パターンを適用すると、4/15以前は旧パターン・4/16以降は新パターンが自動切替されます。"],
+        ["パターンの切り替え", "シフト表のスタッフ名欄のドロップダウンで、デフォルトパターンを切り替えられます。"],
+        ["複数パターン", "1人のスタッフに複数のパターンを登録できます（例：通常・夜勤週）。"],
+      ]
+    },
+    {
+      icon:"🗓", title:"期間限定パターン（GW・年末年始など）",
+      items:[
+        ["作成方法", "設定 → スタッフ → 🗓 期間限定パターン → 「＋ 期間限定パターンを作成」で作成します。"],
+        ["期間設定", "名称・開始日・終了日を設定すると、その期間の日付が一覧表示されます。各日にシフトを割り当ててください。"],
+        ["一括設定", "「一括設定」ボタンで期間内の全日を同じシフトにまとめて設定できます。"],
+        ["優先順位", "手動入力 → 期間限定パターン → 週間パターン（適用開始日が最新のもの）→ デフォルトパターン の順で優先されます。"],
+        ["注意", "期間内の未設定の日は週間パターンも適用されず空白になります。"],
+      ]
+    },
+    {
+      icon:"👤", title:"スタッフ管理",
+      items:[
+        ["スタッフの追加", "シフト表の「＋ スタッフ」ボタン、または設定タブから追加します。名前と部署を入力してください。"],
+        ["名前・部署の変更", "設定 → スタッフ → スタッフを開く → 名前・部署を編集できます。"],
+        ["退職日の設定", "退職日を入力すると退職日以降のセルがグレーアウトし、翌月から自動的に非表示になります。退職月は通常通り表示されます。"],
+        ["退職者の表示", "シフト表の「退職者も表示」チェックをONにすると退職済みスタッフも確認できます。"],
+        ["並び替え", "設定 → スタッフ → 各カードをドラッグ＆ドロップで並び替えできます。↑↓ボタンでも移動可能。同じ部署内のみ移動でき、No は自動的に振り直されます。シフト表・印刷にも即反映。"],
+        ["削除と番号繰り上げ", "スタッフを削除すると同じ部署の番号が自動的に繰り上がります。"],
+        ["部署の表示順", "シフト表・印刷ともに メイク → キッチン → フロント の順で表示されます。"],
+      ]
+    },
+    {
+      icon:"📊", title:"月次集計",
+      items:[
+        ["集計の確認", "ヘッダーの「集計」タブで月ごとの出勤日数・総時間を確認できます。"],
+        ["休憩控除", "実労4.5h〜6.5h未満は0.5h控除、6.5h以上は1h控除して表示されます。"],
+        ["表示月の切り替え", "ヘッダーの ‹ › ボタンで月を切り替えると集計も連動します。"],
+      ]
+    },
+    {
+      icon:"🖨", title:"印刷・PDF出力",
+      items:[
+        ["印刷の開始", "シフト表の「🖨 印刷 / PDF」ボタンをクリックすると印刷モーダルが開きます。"],
+        ["フォーマット①：週表示A4縦（部門別）", "選択した部門ごとに1枚ずつ印刷されます。部門選択ボタンでメイク・キッチン・フロントを個別ON/OFFできます。"],
+        ["フォーマット②：月表示A4縦（部門別）", "選択した部門ごと×印刷範囲で出力されます。部門選択と前半/後半の組み合わせで枚数が決まります。"],
+        ["フォーマット③：月表示A4縦（メイク・厨房）", "メイクとキッチンを1枚にまとめて前半・後半の2枚で出力します。"],
+        ["フォーマット④：月表示A4横（フロント）", "フロントのみ、A4横1枚に前半（上）と後半（下）を両方印刷します。"],
+        ["部門選択", "①②のフォーマットでは印刷する部門をボタンで選択できます。"],
+        ["印刷範囲", "①④以外のフォーマットでは「前半のみ（1〜15日）」「後半のみ（16日〜末日）」「両方」を選択できます。"],
+        ["白黒印刷対応", "日曜=濃グレー、土曜=中グレーで識別。有休は○有、当欠は○欠で印刷。公休は印刷されません。"],
+        ["新しいウィンドウ", "印刷ボタンで新しいウィンドウが自動で開いて印刷ダイアログが表示されます。ブラウザのポップアップを「許可」にしてください。"],
+        ["PDF保存", "印刷ダイアログで「PDFとして保存」を選択。余白「なし」・「背景グラフィックを印刷する」をONにしてください。"],
+      ]
+    },
+    {
+      icon:"💾", title:"データ保存",
+      items:[
+        ["自動保存", "変更するたびに約1秒後にSupabaseへ自動保存されます。ヘッダー右端のインジケーターで確認できます。"],
+        ["🟢 保存済み", "最新の状態が保存されています。"],
+        ["🟡 保存中…", "保存処理中です。ブラウザを閉じないでください。"],
+        ["🔴 オフライン", "インターネット未接続またはサーバーエラーです。接続を確認してください。"],
+        ["複数端末", "同じURLを別の端末で開いても同じデータが表示されます（ページを再読み込みすると最新データが反映されます）。"],
+      ]
+    },
+  ];
+
+  return (
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.55)",zIndex:9500,display:"flex",alignItems:"center",justifyContent:"center"}}
+      onClick={e=>{if(e.target===e.currentTarget)onClose();}}>
+      <div style={{background:"#fff",borderRadius:14,width:"min(720px,95vw)",maxHeight:"88vh",overflow:"auto",boxShadow:"0 20px 60px rgba(0,0,0,.35)",display:"flex",flexDirection:"column"}}>
+        {/* Header */}
+        <div style={{background:"#0f2044",padding:"16px 24px",display:"flex",alignItems:"center",borderRadius:"14px 14px 0 0",flexShrink:0}}>
+          <div>
+            <div style={{fontWeight:700,fontSize:17,color:"#fff"}}>❓ 操作マニュアル</div>
+            <div style={{fontSize:11.5,color:"rgba(255,255,255,.6)",marginTop:2}}>SHIFTMGR — HOTEL ELDIA 神戸店</div>
+          </div>
+          <div style={{marginLeft:"auto",display:"flex",gap:8,alignItems:"center"}}>
+            <button onClick={()=>{
+              const win=window.open("","_blank","width=800,height:1000");
+              const body=document.getElementById("__manual_content__");
+              win.document.write(`<!DOCTYPE html>
+<html lang="ja"><head><meta charset="UTF-8">
+<title>操作マニュアル — HOTEL ELDIA 神戸店</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@300;400;500;700&display=swap">
+<style>
+@page{size:A4 portrait;margin:0}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Noto Sans JP',sans-serif;padding:10mm;background:#fff;font-size:9pt}
+h1{font-size:14pt;font-weight:700;color:#0f2044;margin-bottom:2mm}
+.sub{font-size:8pt;color:#64748b;margin-bottom:5mm}
+.section{margin-bottom:6mm;break-inside:avoid}
+.sec-title{font-size:10pt;font-weight:700;color:#0f2044;border-bottom:1pt solid #0f2044;padding-bottom:1.5mm;margin-bottom:3mm;display:flex;align-items:center;gap:4pt}
+.row{display:flex;gap:8pt;padding:3pt 6pt;background:#f8faff;border-radius:3pt;margin-bottom:2pt;border:0.5pt solid #e2e8f0;break-inside:avoid}
+.term{font-weight:700;font-size:8.5pt;color:#0f2044;min-width:90pt;flex-shrink:0}
+.desc{font-size:8.5pt;color:#475569;line-height:1.5}
+.footer{text-align:center;font-size:7pt;color:#94a3b8;margin-top:5mm;border-top:0.5pt solid #e2e8f0;padding-top:3mm}
+</style></head><body>
+<h1>❓ 操作マニュアル</h1>
+<div class="sub">SHIFTMGR — HOTEL ELDIA 神戸店</div>
+${body ? body.innerHTML : ""}
+<div class="footer">SHIFTMGR for HOTEL ELDIA 神戸店 — 作成: Claude (Anthropic)</div>
+</body></html>`);
+              win.document.close();
+              setTimeout(()=>{ win.print(); setTimeout(()=>win.close(),1000); },600);
+            }} style={{background:"#c9a84c",color:"#0f2044",border:"none",padding:"5px 14px",borderRadius:7,cursor:"pointer",fontWeight:700,fontSize:12.5,fontFamily:"'Noto Sans JP',sans-serif",display:"flex",alignItems:"center",gap:5}}>
+              🖨 印刷
+            </button>
+            <button onClick={onClose} style={{background:"rgba(255,255,255,.15)",border:"none",color:"#fff",width:32,height:32,borderRadius:8,cursor:"pointer",fontSize:18,display:"flex",alignItems:"center",justifyContent:"center"}}>×</button>
+          </div>
+        </div>
+
+        {/* Content */}
+        <div id="__manual_content__" style={{padding:"20px 24px",overflowY:"auto"}}>
+          {sections.map((sec,si)=>(
+            <div key={si} style={{marginBottom:24}}>
+              <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:12,paddingBottom:8,borderBottom:"2px solid #e2e8f0"}}>
+                <span style={{fontSize:18}}>{sec.icon}</span>
+                <span style={{fontWeight:700,fontSize:14.5,color:"#0f2044"}}>{sec.title}</span>
+              </div>
+              <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                {sec.items.map(([term,desc],ii)=>(
+                  <div key={ii} style={{display:"flex",gap:12,padding:"8px 10px",background:"#f8faff",borderRadius:7,border:"1px solid #e8ecf5"}}>
+                    <div style={{flexShrink:0,width:130,fontWeight:700,fontSize:12.5,color:"#0f2044"}}>{term}</div>
+                    <div style={{fontSize:12.5,color:"#475569",lineHeight:1.65}}>{desc}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+
+          {/* バージョン */}
+          <div style={{textAlign:"center",fontSize:11,color:"#94a3b8",paddingTop:8,borderTop:"1px solid #e2e8f0"}}>
+            SHIFTMGR for HOTEL ELDIA 神戸店　— 作成: Claude (Anthropic)
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
+  // ─── Print ────────────────────────────────────────────────────────────────
+  function PrintModal({onClose, year, month, monthDates, weekDates, weekLabel, viewMode, staffByDept, summary, globalTemplates, getEffective, findBlock}){
+    const [fmt,setFmt]=useState("weekly-portrait");
+    const [halfSel,setHalfSel]=useState("both"); // "both"|"first"|"second"
+    const [deptSel,setDeptSel]=useState({make:true,kitchen:true,front:true}); // 部門選択
+    function doPrint(){
+      const pw = document.getElementById("__pw__");
+      if (!pw) return;
+
+      const isLandscape = fmt.includes("landscape");
+      const pageSize = isLandscape ? "A4 landscape" : "A4 portrait";
+
+      // __pw__ の内容を新ウィンドウにコピーして印刷
+      const win = window.open("", "_blank", "width=900,height=700");
+      if (!win) { alert("ポップアップをブロックしています。ブラウザの設定を確認してください。"); return; }
+
+      win.document.write(`<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>シフト表</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@300;400;500;700&family=DM+Sans:wght@400;600;700&display=swap">
+<style>
+@page { size: ${pageSize}; margin: 0; }
+* { box-sizing: border-box; margin: 0; padding: 0; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+body { background: #fff; font-family: 'Noto Sans JP', sans-serif; }
+table { border-collapse: collapse; }
+</style>
+</head>
+<body>
+${pw.innerHTML}
+</body>
+</html>`);
+
+      win.document.close();
+
+      // フォント読み込み後に印刷
+      win.onload = function() {
+        setTimeout(() => {
+          win.print();
+          setTimeout(() => win.close(), 1000);
+        }, 800);
+      };
+      // onload が発火しない場合のフォールバック
+      setTimeout(() => {
+        if (!win.closed) {
+          win.print();
+          setTimeout(() => win.close(), 1000);
+        }
+      }, 2000);
+    }
+    const dates=fmt.includes("weekly")?weekDates:monthDates;
+    const isLS=fmt.includes("landscape")||fmt==="monthly-front-ls";
+    const cellW=isLS?"17pt":"21pt";
+    const nameW=isLS?"42pt":"46pt";
+    function PT({dates, deptIds=null}){
+      const fs = isLS ? "7.5pt" : "8pt";
+      const fsTime = isLS ? "7pt" : "7.5pt";
+      return(
+        <table style={{borderCollapse:"collapse",width:"100%",tableLayout:"fixed",fontSize:fs}}>
+          <thead><tr>
+            {/* No */}
+            <th style={{background:"#000",color:"#fff",padding:"4pt 2pt",width:"14pt",fontSize:"7pt",border:"0.5pt solid #000",textAlign:"center"}}>No</th>
+            {/* 氏名 */}
+            <th style={{background:"#000",color:"#fff",padding:"4pt 4pt",width:nameW,textAlign:"center",border:"0.5pt solid #000",fontWeight:700}}>氏名</th>
+            {/* 入出ラベル */}
+            <th style={{background:"#333",color:"#fff",padding:"1pt",width:"10pt",border:"0.5pt solid #000",fontSize:"5pt"}}>
+              <div style={{display:"flex",flexDirection:"column",fontWeight:900,gap:"1pt",alignItems:"center"}}>
+                <span>入</span><span>出</span>
+              </div>
+            </th>
+            {/* 日付 */}
+            {dates.map(d=>{
+              const dow=d.getDay();
+              const tod=isToday(d);
+              const isSun=dow===0; const isSat=dow===6;
+              return(
+                <th key={d.toISOString()} style={{
+                  padding:"3pt 0",textAlign:"center",
+                  background: tod?"#000": isSun?"#555": isSat?"#888":"#000",
+                  color:"#fff",
+                  fontSize:"8pt",fontWeight:700,
+                  border:"0.5pt solid #000",width:cellW,
+                  borderBottom: isSun||isSat ? "2pt solid #fff" : "0.5pt solid #000",
+                }}>
+                  <div style={{fontWeight:900}}>{viewMode==="weekly"?`${d.getMonth()+1}/${d.getDate()}`:d.getDate()}</div>
+                  <div style={{fontSize:"6.5pt",opacity:.85}}>{isSun?"㊐":isSat?"㊏":JP_WD[dow]}</div>
+                </th>
+              );
+            })}
+            {/* 合計 */}
+            <th style={{background:"#000",color:"#fff",padding:"4pt 2pt",width:"24pt",fontSize:"7pt",borderLeft:"1.5pt solid #000",border:"0.5pt solid #000",textAlign:"center"}}>計</th>
+          </tr></thead>
+          <tbody>
+            {staffByDept.filter(dept=>!deptIds||deptIds.includes(dept.id)).map(dept=>{
+              if(dept.members.length===0) return null;
+              return[
+                <tr key={`d-${dept.id}`}>
+                  <td colSpan={dates.length+4} style={{
+                    padding:"4pt 5pt",fontSize:"8.5pt",fontWeight:900,
+                    background:"#e8e8e8",color:"#000",
+                    borderLeft:"3pt solid #000",
+                    borderTop:"1pt solid #000",borderBottom:"1pt solid #000",
+                    letterSpacing:".06em",
+                  }}>■ {dept.label}</td>
+                </tr>,
+                ...dept.members.map((s,ri)=>{
+                  const sm=summary.find(x=>x.id===s.id);
+                  const rowBg="#fff";
+                  return(
+                    <tr key={s.id} style={{background:"#fff",borderTop:"1pt solid #555",borderBottom:"1pt solid #555"}}>
+                      {/* No */}
+                      <td style={{textAlign:"center",fontSize:"7pt",color:"#555",border:"0.5pt solid #555",padding:"5pt 1pt",background:"#fff"}}>{s.no}</td>
+                      {/* 氏名 */}
+                      <td style={{padding:"5pt 2pt",fontWeight:700,fontSize:"9pt",textAlign:"center",border:"0.5pt solid #ccc",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",background:"#fff"}}>{s.name}</td>
+                      {/* 入出 */}
+                      <td style={{border:"0.5pt solid #555",padding:0,background:"#ebebeb"}}>
+                        <div style={{display:"flex",flexDirection:"column",fontSize:"6.5pt",fontWeight:900,alignItems:"center"}}>
+                          <span style={{padding:"3pt 2pt",borderBottom:"0.3pt solid #bbb"}}>入</span>
+                          <span style={{padding:"3pt 2pt"}}>出</span>
+                        </div>
+                      </td>
+                      {/* シフトセル */}
+                      {dates.map(d=>{
+                        const leaveD = s.leaveDate ? new Date(s.leaveDate) : null;
+                        const afterLeave = leaveD && d > leaveD;
+                        const eff = afterLeave ? null : getEffective(s,d);
+                        const b = eff?.blockId ? findBlock(eff.blockId,s.timeBlocks,globalTemplates) : null;
+                        const dow = d.getDay();
+                        const isSun=dow===0; const isSat=dow===6;
+                        // 白黒向け背景: 日曜=濃グレー, 土曜=中グレー, 平日=通常交互, 退職後=ハッチ
+                        const cellBg = afterLeave
+                          ? "#c8c8c8"
+                          : eff?.isOff
+                            ? "#e8e8e8"
+                            : isSun ? "#d0d0d0"
+                            : isSat ? "#e0e0e0"
+                            : "#fff";
+                        return(
+                          <td key={d.toISOString()} style={{
+                            padding:0,
+                            background:cellBg,
+                            border:`0.5pt solid ${isSun||isSat?"#555":"#888"}`,
+                            borderLeft: isSun ? "1pt solid #333" : isSat ? "0.5pt solid #555" : "0.5pt solid #888",
+                            textAlign:"center",
+                            verticalAlign:"middle",
+                          }}>
+                            {afterLeave?(
+                              <div style={{fontSize:"7pt",color:"#999",textAlign:"center",lineHeight:1}}>×</div>
+                            ):eff?.isOff?(
+                              b?.id==="off2"?(
+                                <div style={{
+                                  fontSize:"8pt",fontWeight:900,color:"#000",
+                                  border:"1pt solid #000",margin:"1pt auto",
+                                  width:"10pt",height:"10pt",
+                                  display:"flex",alignItems:"center",justifyContent:"center",
+                                  borderRadius:"50%",
+                                }}>有</div>
+                              ):b?.id==="off3"?(
+                                <div style={{
+                                  fontSize:"8pt",fontWeight:900,color:"#000",
+                                  border:"1pt solid #000",margin:"1pt auto",
+                                  width:"10pt",height:"10pt",
+                                  display:"flex",alignItems:"center",justifyContent:"center",
+                                  borderRadius:"50%",
+                                }}>欠</div>
+                              ):null
+                            ):(
+                              <div style={{display:"flex",flexDirection:"column",fontSize:fsTime,fontFamily:"monospace",fontWeight:700,lineHeight:1.6}}>
+                                <span style={{padding:"2pt 0",borderBottom:"0.3pt solid #bbb",color:"#000"}}>{eff?.inTime?eff.inTime.replace(/^0/,""):""}</span>
+                                <span style={{padding:"2pt 0",color:"#000"}}>{eff?.outTime?eff.outTime.replace(/^0/,""):""}</span>
+                              </div>
+                            )}
+                          </td>
+                        );
+                      })}
+                      {/* 合計 */}
+                      <td style={{
+                        textAlign:"center",fontFamily:"monospace",fontWeight:900,
+                        fontSize:"7.5pt",color:"#000",background:"#e8e8e8",
+                        borderLeft:"1.5pt solid #000",border:"0.5pt solid #555",
+                        padding:"5pt 1pt",
+                      }}>{sm?`${sm.totalH}h`:""}</td>
+                    </tr>
+                  );
+                }),
+              ];
+            })}
+          </tbody>
+        </table>
+      );
+    }
+    function PageHdr({label}){
+      return(
+        <div style={{display:"flex",alignItems:"center",marginBottom:"4pt",borderBottom:"0.5pt solid #ccc",paddingBottom:"3pt"}}>
+          <span style={{flex:1,fontSize:"9.5pt",fontWeight:700,color:"#000"}}>{label}</span>
+          <span style={{flex:1,textAlign:"center",fontSize:"11pt",fontWeight:900,color:"#000",letterSpacing:".05em"}}>HOTEL ELDIA 神戸店</span>
+          <span style={{flex:1,textAlign:"right",fontSize:"6.5pt",color:"#555"}}>出力日: {new Date().toLocaleDateString("ja-JP")}</span>
+        </div>
+      );
+    }
+    const half1=monthDates.slice(0,15);
+    const half2=monthDates.slice(15);
+    const selectedChunks = halfSel==="first"?[half1]:halfSel==="second"?[half2]:[half1,half2];
+    // 選択中の部門ID一覧
+    const selDepts = Object.entries(deptSel).filter(([,v])=>v).map(([k])=>k);
+
+    const printContent=fmt==="weekly-dept"?(
+      // 週表示A4縦（部門別）: 選択部門ごとに1枚
+      <>
+        {selDepts.map(did=>{
+          const dlabel = did==="make"?"メイク":did==="kitchen"?"キッチン":"フロント";
+          return(
+            <div key={did} style={{width:"210mm",minHeight:"297mm",padding:"7mm",background:"#fff",pageBreakAfter:"always",boxSizing:"border-box",fontFamily:"'Noto Sans JP',sans-serif"}}>
+              <PageHdr label={`${weekDates[0].getFullYear()}年 シフト表　${dlabel}　${weekLabel}`}/>
+              <PT dates={weekDates} deptIds={[did]}/>
+            </div>
+          );
+        })}
+      </>
+    ):fmt==="monthly-dept-v"?(
+      // 月表示A4縦（部門別）: 選択部門ごと × 半月
+      <>
+        {selDepts.map(did=>{
+          const dlabel = did==="make"?"メイク":did==="kitchen"?"キッチン":"フロント";
+          return selectedChunks.map((chunk,ci)=>(
+            <div key={`${did}-${ci}`} style={{width:"210mm",minHeight:"297mm",padding:"7mm",background:"#fff",pageBreakAfter:"always",boxSizing:"border-box",fontFamily:"'Noto Sans JP',sans-serif"}}>
+              <PageHdr label={`${year}年 ${month+1}月 シフト表　${dlabel}　${chunk[0].getDate()}日〜${chunk[chunk.length-1].getDate()}日`}/>
+              <PT dates={chunk} deptIds={[did]}/>
+            </div>
+          ));
+        })}
+      </>
+    ):fmt==="monthly-makekitchen"?(
+      // 月表示A4縦（メイク・厨房まとめ）: 半月ずつ
+      <>
+        {selectedChunks.map((chunk,ci)=>(
+          <div key={ci} style={{width:"210mm",minHeight:"297mm",padding:"7mm",background:"#fff",pageBreakAfter:"always",boxSizing:"border-box",fontFamily:"'Noto Sans JP',sans-serif"}}>
+            <PageHdr label={`${year}年 ${month+1}月 シフト表　メイク・キッチン　${chunk[0].getDate()}日〜${chunk[chunk.length-1].getDate()}日`}/>
+            <PT dates={chunk} deptIds={["make","kitchen"]}/>
+          </div>
+        ))}
+      </>
+    ):fmt==="monthly-front-ls"?(
+      // 月表示A4横（フロントのみ 上=前半・下=後半 1枚）
+      <div style={{width:"297mm",minHeight:"210mm",padding:"6mm",background:"#fff",boxSizing:"border-box",fontFamily:"'Noto Sans JP',sans-serif"}}>
+        <PageHdr label={`${year}年 ${month+1}月 シフト表　フロント`}/>
+        <div style={{marginBottom:"4pt",fontSize:"7pt",fontWeight:700,color:"#555"}}>前半（1〜{half1[half1.length-1].getDate()}日）</div>
+        <PT dates={half1} deptIds={["front"]}/>
+        <div style={{marginTop:"6pt",marginBottom:"4pt",fontSize:"7pt",fontWeight:700,color:"#555",borderTop:"0.5pt solid #ccc",paddingTop:"4pt"}}>後半（{half2[0].getDate()}〜{half2[half2.length-1].getDate()}日）</div>
+        <PT dates={half2} deptIds={["front"]}/>
+      </div>
+    ):(
+      // weekly-landscape fallback
+      <div style={{width:"297mm",minHeight:"210mm",padding:"6mm",background:"#fff",boxSizing:"border-box",fontFamily:"'Noto Sans JP',sans-serif"}}>
+        <div style={{display:"flex",alignItems:"center",marginBottom:"4pt",borderBottom:"0.5pt solid #ccc",paddingBottom:"3pt"}}>
+          <span style={{flex:1,fontSize:"9.5pt",fontWeight:700,color:"#000"}}>{weekDates[0].getFullYear()}年 シフト表　{weekLabel}</span>
+          <span style={{flex:1,textAlign:"center",fontSize:"10pt",fontWeight:900,color:"#000",letterSpacing:".05em"}}>HOTEL ELDIA 神戸店</span>
+          <span style={{flex:1,textAlign:"right",fontSize:"6.5pt",color:"#555"}}>出力日: {new Date().toLocaleDateString("ja-JP")}</span>
+        </div>
+        <PT dates={weekDates} deptIds={selDepts}/>
+      </div>
+    );
+    const SW=isLS?297:210; const SH=isLS?210:297; const SC=isLS?0.38:0.45;
+    return(
+      <>
+        <div id="__pw__" style={{display:"none",fontFamily:"'Noto Sans JP',sans-serif"}}>
+          <style>{`@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@300;400;500;700&family=DM+Sans:wght@400;600;700&display=swap');*{box-sizing:border-box;margin:0;padding:0}table{border-collapse:collapse}`}</style>
+          {printContent}
+        </div>
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.5)",zIndex:9000,display:"flex",alignItems:"center",justifyContent:"center"}} onClick={e=>{if(e.target===e.currentTarget)onClose();}}>
+          <div style={{background:"#fff",borderRadius:14,padding:24,width:660,maxWidth:"95vw",maxHeight:"90vh",overflow:"auto",boxShadow:"0 20px 60px rgba(0,0,0,.3)"}}>
+            <div style={{display:"flex",alignItems:"center",marginBottom:20}}>
+              <div style={{fontWeight:700,fontSize:16,color:"#0f2044"}}>🖨 印刷・PDF出力</div>
+              <button onClick={onClose} style={{marginLeft:"auto",background:"none",border:"none",fontSize:20,color:"#94a3b8",cursor:"pointer"}}>×</button>
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:16}}>
+              {[
+                ["weekly-dept",    "📄","週表示 A4縦（部門別）",  "選択部門ごとに1枚"],
+                ["monthly-dept-v", "📄","月表示 A4縦（部門別）",  "選択部門×半月"],
+                ["monthly-makekitchen","📄","月表示 A4縦（メイク・厨房）","2部門まとめて半月×2枚"],
+                ["monthly-front-ls","📋","月表示 A4横（フロント）", "上=前半・下=後半 1枚"],
+              ].map(([v,ic,l,s])=>(
+                <button key={v} onClick={()=>setFmt(v)} style={{padding:"10px 12px",borderRadius:8,cursor:"pointer",fontFamily:"'Noto Sans JP',sans-serif",fontSize:12.5,fontWeight:700,border:`2px solid ${fmt===v?"#c9a84c":"#dde3ef"}`,background:fmt===v?"#fffbf0":"#fff",color:fmt===v?"#0f2044":"#64748b",display:"flex",alignItems:"center",gap:8,textAlign:"left"}}>
+                  <span style={{fontSize:22}}>{ic}</span>
+                  <div><div>{l}</div><div style={{fontSize:10,fontWeight:400,color:"#94a3b8"}}>{s}</div></div>
+                </button>
+              ))}
+            </div>
+            <div style={{background:"#e2e8f0",borderRadius:8,padding:12,marginBottom:20}}>
+              <div style={{fontSize:11,color:"#64748b",fontWeight:600,marginBottom:8}}>プレビュー</div>
+              <div style={{overflow:"hidden",height:SH*SC,width:SW*SC,border:"1px solid #cbd5e1",borderRadius:3,background:"#fff"}}>
+                <div style={{width:SW,height:SH,transform:`scale(${SC})`,transformOrigin:"top left",fontFamily:"'Noto Sans JP',sans-serif",pointerEvents:"none"}}>{printContent}</div>
+              </div>
+            </div>
+            {/* 部門選択 */}
+            {(fmt==="weekly-dept"||fmt==="monthly-dept-v")&&(
+              <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12,padding:"10px 14px",background:"#f8faff",borderRadius:8,border:"1px solid #e2e8f0"}}>
+                <span style={{fontSize:12.5,fontWeight:700,color:"#0f2044",flexShrink:0}}>部門選択：</span>
+                <div style={{display:"flex",gap:6}}>
+                  {[["make","メイク"],["kitchen","キッチン"],["front","フロント"]].map(([id,label])=>(
+                    <button key={id} onClick={()=>setDeptSel(p=>({...p,[id]:!p[id]}))} style={{
+                      padding:"5px 12px",borderRadius:7,cursor:"pointer",
+                      border:`1.5px solid ${deptSel[id]?"#0f2044":"#dde3ef"}`,
+                      background:deptSel[id]?"#0f2044":"#fff",
+                      color:deptSel[id]?"#fff":"#475569",
+                      fontSize:12,fontWeight:deptSel[id]?700:400,
+                      fontFamily:"'Noto Sans JP',sans-serif",transition:"all .15s",
+                    }}>{label}</button>
+                  ))}
+                </div>
+              </div>
+            )}
+            {/* 月表示の前半/後半セレクター */}
+            {(fmt.includes("monthly")&&fmt!=="monthly-front-ls")&&(
+              <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12,padding:"10px 14px",background:"#f8faff",borderRadius:8,border:"1px solid #e2e8f0"}}>
+                <span style={{fontSize:12.5,fontWeight:700,color:"#0f2044",flexShrink:0}}>印刷範囲：</span>
+                <div style={{display:"flex",gap:6}}>
+                  {[["both","前半+後半（両方）"],["first","前半のみ（1〜15日）"],["second","後半のみ（16日〜末日）"]].map(([v,l])=>(
+                    <button key={v} onClick={()=>setHalfSel(v)} style={{
+                      padding:"5px 12px",borderRadius:7,cursor:"pointer",
+                      border:`1.5px solid ${halfSel===v?"#0f2044":"#dde3ef"}`,
+                      background:halfSel===v?"#0f2044":"#fff",
+                      color:halfSel===v?"#fff":"#475569",
+                      fontSize:12,fontWeight:halfSel===v?700:400,
+                      fontFamily:"'Noto Sans JP',sans-serif",transition:"all .15s",
+                    }}>{l}</button>
+                  ))}
+                </div>
+              </div>
+            )}
+            <div style={{background:"#f8faff",borderRadius:8,padding:"10px 14px",marginBottom:20,fontSize:12,color:"#475569",lineHeight:1.8}}>
+              <strong style={{color:"#0f2044"}}>印刷のヒント</strong><br/>・余白「なし」推奨　・「背景グラフィックを印刷する」ON
+            </div>
+            <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
+              <button onClick={onClose} style={{background:"#fff",color:"#0f2044",border:"1.5px solid #dde3ef",padding:"9px 20px",borderRadius:8,fontSize:13,cursor:"pointer",fontFamily:"'Noto Sans JP',sans-serif"}}>キャンセル</button>
+              <button onClick={doPrint} style={{background:"#c9a84c",color:"#0f2044",border:"none",padding:"9px 24px",borderRadius:8,fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"'Noto Sans JP',sans-serif"}}>🖨 印刷 / PDF保存</button>
+            </div>
+          </div>
+        </div>
+      </>
+    );
+  }
+
+  // ─── Render ────────────────────────────────────────────────────────────────
+  return (
+    <div style={{fontFamily:"'Noto Sans JP',sans-serif",minHeight:"100vh",background:"#f1f5f9",color:"#1e293b"}}>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@300;400;500;700&family=DM+Sans:wght@400;600;700&display=swap');
+        *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+        .hdr{background:#0f2044;padding:0 20px;display:flex;align-items:center;gap:10px;height:52px;position:sticky;top:0;z-index:200;box-shadow:0 2px 14px rgba(0,0,0,.3)}
+        .logo{font-family:'DM Sans',sans-serif;font-weight:700;font-size:17px;color:#c9a84c;letter-spacing:.05em;flex-shrink:0}
+        .logo span{color:#fff}
+        .tab{background:rgba(255,255,255,.1);border:none;color:rgba(255,255,255,.6);padding:5px 14px;border-radius:16px;cursor:pointer;font-size:12.5px;font-family:'Noto Sans JP',sans-serif;transition:all .15s}
+        .tab.on{background:#c9a84c;color:#0f2044;font-weight:700}
+        .tab:hover:not(.on){background:rgba(255,255,255,.18);color:#fff}
+        .vt-wrap{display:flex;gap:3px;background:rgba(255,255,255,.1);padding:3px;border-radius:10px}
+        .vt{background:transparent;border:none;color:rgba(255,255,255,.6);padding:4px 12px;border-radius:7px;cursor:pointer;font-size:12px;font-family:'Noto Sans JP',sans-serif;transition:all .15s;font-weight:600}
+        .vt.on{background:#fff;color:#0f2044}
+        .vt:hover:not(.on){color:#fff;background:rgba(255,255,255,.15)}
+        .nav{background:rgba(255,255,255,.12);border:none;color:#fff;width:28px;height:28px;border-radius:6px;cursor:pointer;font-size:15px}
+        .nav:hover{background:rgba(255,255,255,.22)}
+        .grid-wrap{background:#fff;border-radius:11px;border:1.5px solid #dde3ef;overflow:auto;max-height:calc(100vh - 120px);box-shadow:0 2px 10px rgba(15,32,68,.07)}
+        table{border-collapse:collapse} th,td{white-space:nowrap}
+        .th-no{position:sticky;top:0;left:0;z-index:102;background:#0f2044;color:rgba(255,255,255,.4);padding:0 4px;width:32px;min-width:32px;height:52px;font-size:10px;text-align:center;border-right:1px solid #1a3260}
+        .th-name{position:sticky;top:0;left:32px;z-index:102;background:#0f2044;color:rgba(255,255,255,.75);padding:0 8px;min-width:108px;width:108px;height:52px;font-size:11px;text-align:left;vertical-align:middle;border-right:1px solid #1a3260}
+        .th-io{position:sticky;top:0;left:140px;z-index:101;background:#334155;width:18px;min-width:18px;height:52px;text-align:center;border-right:1px solid #475569}
+        .th-day{position:sticky;top:0;z-index:100;background:#0f2044;color:#fff;text-align:center;padding:0;border-right:1px solid #1a3260}
+        .th-day-inner{display:flex;flex-direction:column;align-items:center;padding:5px 2px 4px;line-height:1.3}
+        .th-day.sun .th-day-inner{color:#fca5a5} .th-day.sat .th-day-inner{color:#93c5fd}
+        .th-day.tod .th-day-inner{background:#c9a84c;color:#0f2044;border-radius:4px}
+        .th-sum{position:sticky;top:0;right:0;z-index:101;background:#0f2044;color:#c9a84c;padding:0 5px;min-width:42px;text-align:center;font-size:10px;border-left:2px solid #c9a84c}
+        .td-no{position:sticky;left:0;z-index:5;background:#f8faff;width:32px;min-width:32px;text-align:center;font-size:10px;color:#94a3b8;border-right:1px solid #e2e8f0;border-bottom:1px solid #e2e8f0}
+        .td-name{position:sticky;left:32px;z-index:5;background:#fff;min-width:108px;width:108px;padding:0 6px;border-right:1px solid #e2e8f0;border-bottom:1px solid #e2e8f0}
+        .td-io{position:sticky;left:140px;z-index:4;background:#f8fffe;border-right:1px solid #e2e8f0;border-bottom:1px solid #e2e8f0;width:18px;min-width:18px;text-align:center;padding:0}
+        .tr-dept td{font-size:11px;font-weight:700;padding:4px 10px;letter-spacing:.04em;border-bottom:1px solid rgba(0,0,0,.05)}
+        .td-sum{position:sticky;right:0;z-index:4;text-align:center;font-family:'DM Sans',sans-serif;font-weight:700;font-size:12px;color:#c9a84c;background:#0f2044;border-left:2px solid #c9a84c;border-bottom:1px solid #1a3260;padding:0 5px}
+        .tr-inactive td{opacity:.4}
+        .card{background:#fff;border-radius:11px;border:1.5px solid #dde3ef;overflow:hidden;box-shadow:0 2px 10px rgba(15,32,68,.06);margin-bottom:16px}
+        .card-hdr{background:#0f2044;color:#fff;padding:10px 16px;font-weight:600;font-size:13px;display:flex;align-items:center;gap:8px}
+        .staff-card{border:1.5px solid #dde3ef;border-radius:10px;overflow:hidden;margin-bottom:10px}
+        .staff-card-hdr{display:flex;align-items:center;gap:10px;padding:11px 14px;cursor:pointer;background:#fafbff;transition:background .15s;user-select:none}
+        .staff-card-hdr:hover{background:#f1f5f9}
+        .staff-card-hdr.open{background:#0f2044;color:#fff}
+        .sub-tabs{display:flex;gap:3px;margin-bottom:14px}
+        .sub-tab{background:#e8ecf5;color:#475569;border:none;padding:6px 14px;border-radius:8px;cursor:pointer;font-size:12.5px;font-family:'Noto Sans JP',sans-serif;font-weight:600;transition:all .15s}
+        .sub-tab.on{background:#0f2044;color:#fff}
+        .sec-tabs{display:flex;gap:3px;margin:0 0 12px}
+        .sec-tab{background:#f1f5f9;color:#64748b;border:none;padding:5px 12px;border-radius:7px;cursor:pointer;font-size:12px;font-family:'Noto Sans JP',sans-serif;font-weight:600;transition:all .15s}
+        .sec-tab.on{background:#0f766e;color:#fff}
+        .inp{border:1.5px solid #dde3ef;border-radius:6px;padding:5px 10px;font-size:13px;font-family:'Noto Sans JP',sans-serif;outline:none;background:#f8faff}
+        .inp:focus{border-color:#0f2044}
+        .form-row{background:#fff;border-radius:9px;border:1.5px dashed #dde3ef;padding:12px 14px;margin-top:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+        .btn{background:#0f2044;color:#fff;border:none;padding:6px 14px;border-radius:7px;font-size:12.5px;font-family:'Noto Sans JP',sans-serif;cursor:pointer;transition:background .15s;display:inline-flex;align-items:center;gap:5px}
+        .btn:hover{background:#1a3260}
+        .btn.sec{background:#fff;color:#0f2044;border:1.5px solid #dde3ef}
+        .btn.sec:hover{background:#f8faff}
+        .btn.gold{background:#c9a84c;color:#0f2044;font-weight:700}
+        .btn.gold:hover{background:#e8c96a}
+        .btn.sm{padding:3px 9px;font-size:11.5px;border-radius:5px}
+        .btn.danger{background:#ef4444;color:#fff}
+      `}</style>
+
+      {/* ── Header ── */}
+      <div className="hdr">
+        <div className="logo">SHIFT<span>MGR</span></div>
+        <div style={{fontSize:13,fontWeight:700,color:"rgba(255,255,255,.85)",letterSpacing:".03em",fontFamily:"'Noto Sans JP',sans-serif",borderLeft:"1.5px solid rgba(255,255,255,.2)",paddingLeft:12}}>
+          HOTEL ELDIA <span style={{color:"#c9a84c"}}>神戸店</span>
+        </div>
+        <div style={{display:"flex",gap:3}}>
+          {[["grid","シフト表"],["summary","集計"],["settings","設定"]].map(([v,l])=>(
+            <button key={v} className={`tab${view===v?" on":""}`} onClick={()=>setView(v)}>{l}</button>
+          ))}
+        </div>
+        <div className="vt-wrap">
+          <button className={`vt${viewMode==="weekly"?" on":""}`} onClick={()=>setViewMode("weekly")}>週</button>
+          <button className={`vt${viewMode==="monthly"?" on":""}`} onClick={()=>setViewMode("monthly")}>月</button>
+        </div>
+        {viewMode==="weekly"?(
+          <div style={{display:"flex",alignItems:"center",gap:5}}>
+            <button className="nav" onClick={prevWeek}>‹</button>
+            <span style={{fontFamily:"'DM Sans',sans-serif",fontWeight:600,fontSize:12,color:"#fff",minWidth:190,textAlign:"center"}}>{weekLabel}</span>
+            <button className="nav" onClick={nextWeek}>›</button>
+          </div>
+        ):(
+          <div style={{display:"flex",alignItems:"center",gap:5}}>
+            <button className="nav" onClick={prevMonth}>‹</button>
+            <span style={{fontFamily:"'DM Sans',sans-serif",fontWeight:600,fontSize:15,color:"#fff",minWidth:90,textAlign:"center"}}>{year}年 {month+1}月</span>
+            <button className="nav" onClick={nextMonth}>›</button>
+          </div>
+        )}
+        {/* DB状態インジケーター */}
+        <div style={{
+          display:"flex",alignItems:"center",gap:5,
+          fontSize:11,color:"rgba(255,255,255,.7)",
+          background:"rgba(255,255,255,.08)",padding:"3px 10px",borderRadius:12,
+          flexShrink:0,
+        }}>
+          <span style={{
+            width:7,height:7,borderRadius:"50%",flexShrink:0,
+            background:
+              dbStatus==="ok"?"#4ade80":
+              dbStatus==="saving"?"#fbbf24":
+              dbStatus==="offline"?"#f87171":"#94a3b8",
+          }}/>
+          {dbStatus==="ok"?"保存済み":
+           dbStatus==="saving"?"保存中…":
+           dbStatus==="loading"?"読込中…":
+           dbStatus==="offline"?"オフライン":"初期化中"}
+        </div>
+        <button onClick={()=>setShowManual(true)} style={{
+          marginLeft:8,
+          background:"rgba(255,255,255,.15)",border:"1px solid rgba(255,255,255,.3)",
+          color:"#fff",padding:"4px 14px",borderRadius:16,cursor:"pointer",
+          fontSize:12.5,fontFamily:"'Noto Sans JP',sans-serif",fontWeight:600,
+          display:"flex",alignItems:"center",gap:5,flexShrink:0,
+        }}>
+          ❓ マニュアル
+        </button>
+      </div>
+
+      {showManual&&<ManualModal onClose={()=>setShowManual(false)}/>}
+
+      <div style={{padding:16}}>
+
+        {/* ── GRID ── */}
+        {view==="grid"&&<>
+          <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:12,flexWrap:"wrap"}}>
+            <button className="btn sec" style={{fontSize:12}} onClick={()=>{setView("settings");setSettingsTab("staff");setAddingStaff(true);}}>＋ スタッフ</button>
+            <button style={{background:"#c9a84c",color:"#0f2044",fontWeight:700,border:"none",padding:"6px 14px",borderRadius:7,fontSize:12,cursor:"pointer"}} onClick={()=>setShowPrint(true)}>🖨 印刷 / PDF</button>
+            <label style={{display:"flex",alignItems:"center",gap:5,fontSize:12,color:"#64748b",cursor:"pointer",marginLeft:4}}>
+              <input type="checkbox" checked={showInactive} onChange={e=>setShowInactive(e.target.checked)}/>退職者も表示
+            </label>
+            <div style={{marginLeft:"auto",fontSize:10.5,color:"#94a3b8"}}>🟡 パターン自動入力　　クリックでシフト選択</div>
+          </div>
+
+          <div className="grid-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th className="th-no">No</th>
+                  <th className="th-name">氏名</th>
+                  <th className="th-io">
+                    <div style={{display:"flex",flexDirection:"column",fontSize:7.5,fontWeight:700,gap:1,paddingTop:10}}>
+                      <span style={{color:"#6ee7b7"}}>入</span><span style={{color:"#fca5a5"}}>出</span>
+                    </div>
+                  </th>
+                  {headerDates.map(d=>{
+                    const dow=d.getDay();const tod=isToday(d);
+                    return(
+                      <th key={d.toISOString()} className={`th-day${dow===0?" sun":dow===6?" sat":""}${tod?" tod":""}`}>
+                        <div className="th-day-inner">
+                          <span style={{fontSize:11,fontWeight:700}}>{viewMode==="weekly"?`${d.getMonth()+1}/${d.getDate()}`:d.getDate()}</span>
+                          <span style={{fontSize:9.5,opacity:.75}}>{JP_WD[dow]}</span>
+                        </div>
+                      </th>
+                    );
+                  })}
+                  <th className="th-sum">合計</th>
+                </tr>
+              </thead>
+              <tbody>
+                {staffByDept.map(dept=>{
+                  if(dept.members.length===0)return null;
+                  const dc=PALETTE[dept.colorIdx];
+                  return[
+                    <tr key={`d-${dept.id}`} className="tr-dept">
+                      <td colSpan={headerDates.length+4} style={{background:dc.bg,color:dc.color,borderLeft:`3px solid ${dc.color}`,position:"sticky",left:0}}>▍ {dept.label}</td>
+                    </tr>,
+                    ...dept.members.map(s=>{
+                      const sm=summary.find(x=>x.id===s.id);
+                      const ap=s.activePatternId?s.patterns.find(p=>p.id===s.activePatternId):null;
+                      const pc=ap?PALETTE[ap.colorIdx]:null;
+                      return(
+                        <tr key={s.id}>
+                          <td className="td-no">{s.no}</td>
+                          <td className="td-name">
+                            <div style={{display:"flex",flexDirection:"column",gap:2,padding:"3px 0"}}>
+                              <div style={{display:"flex",alignItems:"center",gap:4}}>
+                                <span style={{fontSize:12.5,fontWeight:700,color:"#1e293b"}}>{s.name}</span>
+                              </div>
+                              {s.active&&(s.patterns.length>0?(
+                                <select value={s.activePatternId||""} onChange={e=>updateStaff(s.id,p=>({...p,activePatternId:e.target.value||null}))}
+                                  style={{fontSize:9.5,border:`1px solid ${pc?pc.color:"#dde3ef"}`,borderRadius:4,padding:"1px 4px",background:pc?pc.bg:"#f8faff",color:pc?pc.color:"#64748b",outline:"none",cursor:"pointer",maxWidth:100,fontFamily:"'Noto Sans JP',sans-serif"}}>
+                                  {s.patterns.map(p=><option key={p.id} value={p.id}>{p.label}{p.activeFrom?` (${p.activeFrom}〜)`:" (デフォルト)"}</option>)}
+                                </select>
+                              ):(
+                                <span onClick={()=>{setView("settings");setSettingsTab("staff");setOpenStaffId(s.id);setStaffSettingSection("patterns");}} style={{fontSize:9.5,color:"#94a3b8",cursor:"pointer",borderBottom:"1px dashed #cbd5e1"}}>＋ パターン</span>
+                              ))}
+                              {/* Personal block count badge */}
+                              {s.timeBlocks.length>0&&(
+                                <span onClick={()=>{setView("settings");setSettingsTab("staff");setOpenStaffId(s.id);setStaffSettingSection("timeblocks");}} style={{fontSize:8.5,color:"#0f766e",cursor:"pointer",background:"#ccfbf1",padding:"0 4px",borderRadius:3,display:"inline-block",width:"fit-content"}}>
+                                  ⏱ {s.timeBlocks.length}件の個人設定
+                                </span>
+                              )}
+                            </div>
+                          </td>
+                          <td className="td-io">
+                            <div style={{display:"flex",flexDirection:"column",height:"100%",fontSize:8,fontWeight:700}}>
+                              <span style={{color:"#0f766e",padding:"3px 0",borderBottom:"1px solid #e2e8f0",textAlign:"center",flex:1,display:"flex",alignItems:"center",justifyContent:"center"}}>入</span>
+                              <span style={{color:"#dc2626",padding:"3px 0",textAlign:"center",flex:1,display:"flex",alignItems:"center",justifyContent:"center"}}>出</span>
+                            </div>
+                          </td>
+                          {headerDates.map(d=>(
+                            <ShiftCell key={d.toISOString()} s={s} dateObj={d}
+                              globalTemplates={globalTemplates}
+                              cellData={cellData} setCellData={setCellData}
+                              getEffective={getEffective} clearCell={clearCell}
+                              mode={viewMode==="weekly"?"week":"month"}
+                            />
+                          ))}
+                          <td className="td-sum">{sm?`${sm.totalH}h`:""}</td>
+                        </tr>
+                      );
+                    }),
+                  ];
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          {addingStaff&&(
+            <div className="form-row">
+              <input className="inp" placeholder="氏名 *" value={newStaff.name} onChange={e=>setNewStaff(p=>({...p,name:e.target.value}))} onKeyDown={e=>e.key==="Enter"&&addStaff()} autoFocus style={{width:130}}/>
+              <select value={newStaff.deptId} onChange={e=>setNewStaff(p=>({...p,deptId:e.target.value}))} style={{...SEL,fontSize:13,padding:"5px 10px"}}>{depts.map(d=><option key={d.id} value={d.id}>{d.label}</option>)}</select>
+              <button className="btn gold" onClick={addStaff}>追加</button>
+              <button className="btn sec" onClick={()=>setAddingStaff(false)}>キャンセル</button>
+            </div>
+          )}
+        </>}
+
+        {/* ── SUMMARY ── */}
+        {view==="summary"&&staffByDept.map(dept=>{
+          if(dept.members.length===0)return null;
+          const dc=PALETTE[dept.colorIdx];
+          return(
+            <div key={dept.id} className="card" style={{borderTop:`3px solid ${dc.color}`}}>
+              <div className="card-hdr" style={{background:dc.bg,color:dc.color}}>{dept.label} — {year}年 {month+1}月</div>
+              <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
+                <thead>
+                  <tr>
+                    <th style={{background:"#f8faff",color:"#0f2044",padding:"8px 12px",fontWeight:700,textAlign:"left",borderBottom:"2px solid #dde3ef",minWidth:140}}>スタッフ</th>
+                    <th style={{background:"#f8faff",padding:"8px 10px",fontWeight:700,textAlign:"center",borderBottom:"2px solid #dde3ef",color:"#0f2044"}}>出勤日数</th>
+                    <th style={{background:"#f8faff",padding:"8px 10px",fontWeight:700,textAlign:"center",borderBottom:"2px solid #dde3ef",color:"#0f2044"}}>総時間</th>
+                    <th style={{background:"#f8faff",padding:"8px 10px",fontWeight:600,textAlign:"left",borderBottom:"2px solid #dde3ef",color:"#64748b",fontSize:11}}>個人テンプレート</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {dept.members.map((s,ri)=>{
+                    const sm=summary.find(x=>x.id===s.id);if(!sm)return null;
+                    return(
+                      <tr key={s.id} style={{background:ri%2===0?"#fff":"#fafbff"}}>
+                        <td style={{padding:"8px 12px",borderBottom:"1px solid #e2e8f0",fontWeight:600}}>
+                          <span style={{color:"#94a3b8",fontSize:10,marginRight:6}}>{s.no}</span>{s.name}
+
+                        </td>
+                        <td style={{padding:"8px 10px",borderBottom:"1px solid #e2e8f0",textAlign:"center"}}>
+                          <span style={{background:"#e8ecf5",color:"#0f2044",padding:"2px 9px",borderRadius:8,fontFamily:"'DM Sans',sans-serif",fontWeight:700,fontSize:12}}>{sm.workDays}日</span>
+                        </td>
+                        <td style={{padding:"8px 10px",borderBottom:"1px solid #e2e8f0",textAlign:"center"}}>
+                          <span style={{background:"#0f2044",color:"#c9a84c",padding:"2px 9px",borderRadius:8,fontFamily:"'DM Sans',sans-serif",fontWeight:700,fontSize:12}}>{sm.totalH}h</span>
+                        </td>
+                        <td style={{padding:"8px 10px",borderBottom:"1px solid #e2e8f0"}}>
+                          <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>
+                            {s.timeBlocks.map(b=>{const c=PALETTE[b.colorIdx];return(
+                              <span key={b.id} style={{background:c.bg,color:c.color,border:`1px solid ${c.color}`,padding:"1px 7px",borderRadius:5,fontSize:10,fontWeight:700}}>
+                                {b.short} {b.inH!=null?`${fmtT(b.inH,b.inM)}-${fmtT(b.outH,b.outM)}`:""}
+                              </span>
+                            );})}
+                            {s.timeBlocks.length===0&&<span style={{fontSize:10.5,color:"#e2e8f0"}}>—</span>}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          );
+        })}
+
+        {/* ── SETTINGS ── */}
+        {view==="settings"&&<>
+          <div className="sub-tabs">
+            <button className={`sub-tab${settingsTab==="staff"?" on":""}`} onClick={()=>setSettingsTab("staff")}>👤 スタッフ</button>
+            <button className={`sub-tab${settingsTab==="global"?" on":""}`} onClick={()=>setSettingsTab("global")}>🌐 共通テンプレート</button>
+          </div>
+
+          {/* ── Staff settings ── */}
+          {settingsTab==="staff"&&<>
+            <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:12}}>
+              <span style={{fontSize:13,color:"#64748b"}}>スタッフを選んで個人設定・週間パターンを管理</span>
+              <button className="btn gold sm" style={{marginLeft:"auto"}} onClick={()=>setAddingStaff(v=>!v)}>＋ スタッフ追加</button>
+            </div>
+            {addingStaff&&(
+              <div className="form-row" style={{marginBottom:14}}>
+                <input className="inp" placeholder="氏名 *" value={newStaff.name} onChange={e=>setNewStaff(p=>({...p,name:e.target.value}))} onKeyDown={e=>e.key==="Enter"&&addStaff()} autoFocus style={{width:130}}/>
+                <select value={newStaff.deptId} onChange={e=>setNewStaff(p=>({...p,deptId:e.target.value}))} style={{...SEL,fontSize:13,padding:"5px 10px"}}>{depts.map(d=><option key={d.id} value={d.id}>{d.label}</option>)}</select>
+                <button className="btn gold" onClick={addStaff}>追加</button>
+                <button className="btn sec" onClick={()=>setAddingStaff(false)}>キャンセル</button>
+              </div>
+            )}
+            {staffByDept.map(dept=>{
+              if(staff.filter(s=>s.deptId===dept.id).length===0)return null;
+              const dc=PALETTE[dept.colorIdx];
+              return(
+                <div key={dept.id} style={{marginBottom:18}}>
+                  <span style={{fontSize:13,fontWeight:700,color:dc.color,background:dc.bg,padding:"3px 12px",borderRadius:8,border:`1px solid ${dc.color}`,display:"inline-block",marginBottom:8}}>{dept.label}</span>
+                  {[...staff.filter(s=>s.deptId===dept.id)].sort((a,b)=>a.no-b.no).map(s=>{
+                    const isOpen=openStaffId===s.id;
+                    return(
+                      <div key={s.id} className="staff-card"
+                        draggable
+                        onDragStart={()=>{dragStaffId.current=s.id;}}
+                        onDragOver={e=>{e.preventDefault();setDragOverId(s.id);}}
+                        onDragLeave={()=>setDragOverId(null)}
+                        onDrop={()=>handleDrop(s.id)}
+                        style={{opacity:dragStaffId.current===s.id?.4:1,
+                          outline:dragOverId===s.id?"2px dashed #c9a84c":"none",
+                          outlineOffset:2,transition:"outline .1s"}}>
+                        <div className={`staff-card-hdr${isOpen?" open":""}`} onClick={()=>setOpenStaffId(isOpen?null:s.id)}>
+                          <span style={{fontSize:10,color:isOpen?"rgba(255,255,255,.4)":"#94a3b8",minWidth:16}}>{s.no}</span>
+                          <span style={{fontSize:14,fontWeight:700,textDecoration:!s.active?"line-through":"none"}}>{s.name}</span>
+                          {!s.active&&<span style={{fontSize:9,color:"#ef4444",background:"#fee2e2",padding:"1px 5px",borderRadius:3}}>退職</span>}
+                          {/* Block count */}
+                          {s.timeBlocks.length>0&&<span style={{fontSize:9.5,color:isOpen?"rgba(255,255,255,.7)":"#0f766e",background:isOpen?"rgba(255,255,255,.1)":"#ccfbf1",padding:"1px 6px",borderRadius:5}}>⏱ {s.timeBlocks.length}個人</span>}
+                          {/* Pattern count */}
+                          {s.patterns.length>0&&<span style={{fontSize:9.5,color:isOpen?"rgba(255,255,255,.7)":"#6d28d9",background:isOpen?"rgba(255,255,255,.1)":"#ede9fe",padding:"1px 6px",borderRadius:5}}>📅 {s.patterns.length}パターン</span>}
+                          {/* 並び替えボタン */}
+                          <div style={{marginLeft:"auto",display:"flex",gap:3,alignItems:"center"}} onClick={e=>e.stopPropagation()}>
+                            <span style={{fontSize:14,color:isOpen?"rgba(255,255,255,.5)":"#cbd5e1",cursor:"grab",padding:"0 4px",userSelect:"none"}} title="ドラッグで並び替え">⠿</span>
+                            <button onClick={()=>moveStaff(s.id,-1)} style={{background:isOpen?"rgba(255,255,255,.2)":"#e8ecf5",border:"none",borderRadius:4,width:22,height:22,cursor:"pointer",fontSize:12,color:isOpen?"#fff":"#475569",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>↑</button>
+                            <button onClick={()=>moveStaff(s.id,1)} style={{background:isOpen?"rgba(255,255,255,.2)":"#e8ecf5",border:"none",borderRadius:4,width:22,height:22,cursor:"pointer",fontSize:12,color:isOpen?"#fff":"#475569",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>↓</button>
+                            <span style={{fontSize:11,opacity:.4,marginLeft:4}}>{isOpen?"▲":"▼"}</span>
+                          </div>
+                        </div>
+                        {isOpen&&(
+                          <div>
+                            {/* Meta */}
+                            <div style={{padding:"10px 16px",background:"#f8faff",borderBottom:"1px solid #e2e8f0",display:"flex",gap:10,flexWrap:"wrap",alignItems:"center"}}>
+                              <div style={{display:"flex",flexDirection:"column",gap:3}}>
+                                <label style={{fontSize:10.5,color:"#64748b",fontWeight:600}}>名前</label>
+                                <input value={s.name} onChange={e=>updateStaff(s.id,p=>({...p,name:e.target.value}))}
+                                  style={{border:"1.5px solid #dde3ef",borderRadius:6,padding:"5px 10px",fontSize:13,outline:"none",background:"#fff",fontFamily:"'Noto Sans JP',sans-serif",width:130}}/>
+                              </div>
+                              <div style={{display:"flex",flexDirection:"column",gap:3}}>
+                                <label style={{fontSize:10.5,color:"#64748b",fontWeight:600}}>部署</label>
+                                <select value={s.deptId} onChange={e=>updateStaff(s.id,p=>({...p,deptId:e.target.value}))}
+                                  style={{...SEL,fontSize:13,padding:"5px 10px"}}>
+                                  {depts.map(d=><option key={d.id} value={d.id}>{d.label}</option>)}
+                                </select>
+                              </div>
+                              <div style={{display:"flex",flexDirection:"column",gap:3}}>
+                                <label style={{fontSize:10.5,color:"#64748b",fontWeight:600}}>退職日</label>
+                                <input type="date" value={s.leaveDate||""} onChange={e=>updateStaff(s.id,p=>({...p,leaveDate:e.target.value,active:!e.target.value}))}
+                                  style={{...SEL,padding:"4px 8px",fontSize:12}}/>
+                              </div>
+                              <div style={{display:"flex",flexDirection:"column",gap:3}}>
+                                <label style={{fontSize:10.5,color:"#64748b",fontWeight:600}}>在職</label>
+                                <label style={{display:"flex",alignItems:"center",gap:5,cursor:"pointer",fontSize:12}}>
+                                  <input type="checkbox" checked={s.active} onChange={e=>updateStaff(s.id,p=>({...p,active:e.target.checked,leaveDate:e.target.checked?"":p.leaveDate}))} style={{cursor:"pointer"}}/>
+                                  在職中
+                                </label>
+                              </div>
+                              <button onClick={()=>{
+                                setStaff(p=>{
+                                  const filtered = p.filter(x=>x.id!==s.id);
+                                  // 同じ部署のスタッフの番号を繰り上げ
+                                  const deptId = s.deptId;
+                                  let no = 1;
+                                  return filtered.map(x=>{
+                                    if(x.deptId===deptId){ return {...x, no:no++}; }
+                                    return x;
+                                  });
+                                });
+                              }} className="btn danger sm" style={{marginLeft:"auto",alignSelf:"flex-end"}}>削除</button>
+                            </div>
+
+                            {/* Section tabs */}
+                            <div style={{padding:"10px 16px 0",background:"#fff"}}>
+                              <div className="sec-tabs">
+                                <button className={`sec-tab${staffSettingSection==="timeblocks"?" on":""}`}
+                                  onClick={()=>setStaffSettingSection("timeblocks")}>
+                                  ⏱ 個人時間テンプレート {s.timeBlocks.length>0&&<span style={{background:"rgba(255,255,255,.25)",borderRadius:10,padding:"0 5px",fontSize:10}}>{s.timeBlocks.length}</span>}
+                                </button>
+                                <button className={`sec-tab${staffSettingSection==="patterns"?" on":""}`}
+                                  onClick={()=>setStaffSettingSection("patterns")}>
+                                  📅 週間パターン {s.patterns.length>0&&<span style={{background:"rgba(255,255,255,.25)",borderRadius:10,padding:"0 5px",fontSize:10}}>{s.patterns.length}</span>}
+                                </button>
+                                <button className={`sec-tab${staffSettingSection==="periodpatterns"?" on":""}`}
+                                  onClick={()=>setStaffSettingSection("periodpatterns")} style={{background:staffSettingSection==="periodpatterns"?"#c9a84c":undefined,color:staffSettingSection==="periodpatterns"?"#0f2044":undefined}}>
+                                  🗓 期間限定パターン {(s.periodPatterns||[]).length>0&&<span style={{background:"rgba(255,255,255,.25)",borderRadius:10,padding:"0 5px",fontSize:10}}>{(s.periodPatterns||[]).length}</span>}
+                                </button>
+                              </div>
+                            </div>
+
+                            {staffSettingSection==="timeblocks"&&(
+                              <StaffTimeBlockManager s={s} onUpdate={updateStaff}/>
+                            )}
+                            {staffSettingSection==="patterns"&&(
+                              <StaffPatternPanel s={s} globalTemplates={globalTemplates} onUpdate={updateStaff}/>
+                            )}
+                            {staffSettingSection==="periodpatterns"&&(
+                              <PeriodPatternPanel s={s} globalTemplates={globalTemplates} onUpdate={updateStaff}/>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })}
+          </>}
+
+          {/* ── Global templates ── */}
+          {settingsTab==="global"&&(
+            <div>
+              <GlobalTemplateManager globalTemplates={globalTemplates} setGlobalTemplates={setGlobalTemplates}/>
+            </div>
+          )}
+        </>}
+      </div>
+
+      {showPrint&&<PrintModal onClose={()=>setShowPrint(false)} year={year} month={month} monthDates={monthDates} weekDates={weekDates} weekLabel={weekLabel} viewMode={viewMode} staffByDept={staffByDept} summary={summary} globalTemplates={globalTemplates} getEffective={getEffective} findBlock={findBlock}/>}
+    </div>
+  );
+}
+
+    // Mount to DOM
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<ShiftApp />);
+  </script>
+</body>
+</html>
