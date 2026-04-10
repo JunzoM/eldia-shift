@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
 import { useShiftStore } from '@/store/useShiftStore'
 import { INIT_DEPTS, PALETTE } from '@/lib/constants'
-import { getDays, calcH, calcNetH, fmtT } from '@/lib/utils'
+import { getDays, calcH, calcNetH, fmtT, toDateStr } from '@/lib/utils'
 
 export function SummaryView() {
   const { staff, globalTemplates, cellData, year, month, getEffective } = useShiftStore()
@@ -14,6 +14,7 @@ export function SummaryView() {
   const summary = useMemo(() => staff.map(s => {
     let totalH = 0, workDays = 0
     monthDates.forEach(d => {
+      if (s.leaveDate && toDateStr(d) > s.leaveDate) return
       const eff = getEffective(s, d)
       if (!eff || eff.isOff) return
       if (eff.inTime && eff.outTime) {

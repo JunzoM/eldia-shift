@@ -6,7 +6,7 @@ import { INIT_DEPTS, JP_WD, OFF_BLOCKS } from '@/lib/constants'
 const ID_YUKYU = OFF_BLOCKS.find(b => b.id === 'off2')!.id   // 有休
 const ID_TOKKETSU = OFF_BLOCKS.find(b => b.id === 'off3')!.id // 当欠
 const deptLabel = (id: string) => INIT_DEPTS.find(d => d.id === id)?.label ?? id
-import { getDays, getWeekDates, calcH, calcNetH, findBlock, isToday } from '@/lib/utils'
+import { getDays, getWeekDates, calcH, calcNetH, findBlock, isToday, toDateStr } from '@/lib/utils'
 
 interface Props { onClose: () => void }
 
@@ -40,6 +40,7 @@ export function PrintModal({ onClose }: Props) {
   const summary = useMemo(() => staff.map(s => {
     let totalH = 0
     monthDates.forEach(d => {
+      if (s.leaveDate && toDateStr(d) > s.leaveDate) return
       const eff = getEffective(s, d)
       if (!eff || eff.isOff) return
       if (eff.inTime && eff.outTime) {
