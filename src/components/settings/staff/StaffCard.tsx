@@ -88,6 +88,7 @@ export function StaffCard({ s, isOpen, sectionTab, onToggle, onSectionChange, dr
             </div>
             <button
               onClick={() => {
+                if (!window.confirm(`「${s.name}」を削除しますか？この操作は取り消せません。`)) return
                 const deptId = s.deptId
                 const filtered = staff.filter(x => x.id !== s.id)
                 let no = 1

@@ -12,8 +12,6 @@ export const uid = () => Math.random().toString(36).slice(2, 8)
 export const fmtT = (h: number, m: number) =>
   `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`
 
-export const fmtTP = (h: number, m: number) =>
-  `${h}:${String(m).padStart(2, '0')}`
 
 export const calcH = (ih: number | null, im: number, oh: number | null, om: number): number => {
   if (ih == null || oh == null) return 0

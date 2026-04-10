@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import type { Staff, TimeBlock, WeeklyPattern } from '@/types'
 import { PALETTE, OFF_BLOCKS, JP_WD } from '@/lib/constants'
 import { fmtT, uid } from '@/lib/utils'
@@ -18,7 +18,7 @@ export function PatternEditor({ initial, s, globalTemplates, onSave, onCancel }:
   const f = (k: keyof WeeklyPattern, v: WeeklyPattern[keyof WeeklyPattern]) => setForm(p => ({ ...p, [k]: v }))
   const setDay = (dow: number, v: string) => setForm(p => { const d = [...p.days]; d[dow] = v; return { ...p, days: d } })
 
-  const allBlocks = [...s.timeBlocks, ...globalTemplates, ...OFF_BLOCKS]
+  const allBlocks = useMemo(() => [...s.timeBlocks, ...globalTemplates, ...OFF_BLOCKS], [s.timeBlocks, globalTemplates])
 
   return (
     <div style={{ background: '#fff', border: '1.5px solid #c9a84c', borderRadius: 10, padding: 18, marginBottom: 14 }}>

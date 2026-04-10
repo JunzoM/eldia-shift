@@ -1,6 +1,11 @@
 import { useState, useMemo } from 'react'
 import { useShiftStore } from '@/store/useShiftStore'
-import { INIT_DEPTS, JP_WD } from '@/lib/constants'
+import { INIT_DEPTS, JP_WD, OFF_BLOCKS } from '@/lib/constants'
+
+// OFF_BLOCKSのIDを定数として参照（ハードコード排除）
+const ID_YUKYU = OFF_BLOCKS.find(b => b.id === 'off2')!.id   // 有休
+const ID_TOKKETSU = OFF_BLOCKS.find(b => b.id === 'off3')!.id // 当欠
+const deptLabel = (id: string) => INIT_DEPTS.find(d => d.id === id)?.label ?? id
 import { getDays, getWeekDates, calcH, calcNetH, findBlock, isToday } from '@/lib/utils'
 
 interface Props { onClose: () => void }
@@ -181,9 +186,9 @@ ${pw.innerHTML}
                           {afterLeave ? (
                             <div style={{ fontSize: '7pt', color: '#999', textAlign: 'center', lineHeight: 1 }}>×</div>
                           ) : eff?.isOff ? (
-                            b?.id === 'off2' ? (
+                            b?.id === ID_YUKYU ? (
                               <div style={{ fontSize: '8pt', fontWeight: 900, color: '#000', border: '1pt solid #000', margin: '1pt auto', width: '10pt', height: '10pt', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '50%' }}>有</div>
-                            ) : b?.id === 'off3' ? (
+                            ) : b?.id === ID_TOKKETSU ? (
                               <div style={{ fontSize: '8pt', fontWeight: 900, color: '#000', border: '1pt solid #000', margin: '1pt auto', width: '10pt', height: '10pt', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '50%' }}>欠</div>
                             ) : null
                           ) : (
@@ -211,7 +216,7 @@ ${pw.innerHTML}
   const printContent = fmt === 'weekly-dept' ? (
     <>
       {selDepts.map(did => {
-        const dlabel = did === 'make' ? 'メイク' : did === 'kitchen' ? 'キッチン' : 'フロント'
+        const dlabel = deptLabel(did)
         return (
           <div key={did} style={{ width: '210mm', minHeight: '297mm', padding: '7mm', background: '#fff', pageBreakAfter: 'always', boxSizing: 'border-box', fontFamily: "'Noto Sans JP',sans-serif" }}>
             <PageHdr label={`${weekDates[0]?.getFullYear()}年 シフト表　${dlabel}　${weekLabel}`} />
@@ -223,7 +228,7 @@ ${pw.innerHTML}
   ) : fmt === 'monthly-dept-v' ? (
     <>
       {selDepts.map(did => {
-        const dlabel = did === 'make' ? 'メイク' : did === 'kitchen' ? 'キッチン' : 'フロント'
+        const dlabel = deptLabel(did)
         return selectedChunks.map((chunk, ci) => (
           <div key={`${did}-${ci}`} style={{ width: '210mm', minHeight: '297mm', padding: '7mm', background: '#fff', pageBreakAfter: 'always', boxSizing: 'border-box', fontFamily: "'Noto Sans JP',sans-serif" }}>
             <PageHdr label={`${year}年 ${month + 1}月 シフト表　${dlabel}　${chunk[0].getDate()}日〜${chunk[chunk.length - 1].getDate()}日`} />

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import type { Staff, TimeBlock, WeeklyPattern } from '@/types'
 import { useShiftStore } from '@/store/useShiftStore'
 import { PALETTE, OFF_BLOCKS, JP_WD } from '@/lib/constants'
@@ -31,7 +31,7 @@ export function StaffPatternPanel({ s }: Props) {
   }
 
   const editPat = editingId ? s.patterns.find(p => p.id === editingId) : null
-  const allBlocks = [...s.timeBlocks, ...globalTemplates, ...OFF_BLOCKS]
+  const allBlocks = useMemo(() => [...s.timeBlocks, ...globalTemplates, ...OFF_BLOCKS], [s.timeBlocks, globalTemplates])
 
   return (
     <div style={{ padding: '12px 16px' }}>

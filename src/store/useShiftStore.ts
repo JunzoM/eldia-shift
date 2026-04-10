@@ -23,6 +23,7 @@ interface ShiftState {
   showPrint: boolean
   showManual: boolean
   addingStaff: boolean
+  loadFailed: boolean
   newStaff: { name: string; deptId: DeptId }
   dragOverId: number | null
 
@@ -82,6 +83,7 @@ export const useShiftStore = create<ShiftState>((set, get) => ({
   showPrint: false,
   showManual: false,
   addingStaff: false,
+  loadFailed: false,
   newStaff: { name: '', deptId: 'front' },
   dragOverId: null,
 
@@ -163,7 +165,7 @@ export const useShiftStore = create<ShiftState>((set, get) => ({
 
   // ── UI actions ──
   setDbStatus: dbStatus => set({ dbStatus }),
-  setView: view => set({ view }),
+  setView: view => set({ view, addingStaff: false }),
   setViewMode: viewMode => set({ viewMode }),
 
   prevWeek: () => set(state => {
@@ -206,12 +208,14 @@ export const useShiftStore = create<ShiftState>((set, get) => ({
         dbStatus: 'ok',
       })
     } catch {
-      set({ dbStatus: 'offline' })
+      // loadFailed フラグで auto-save による初期データ上書きを防止
+      set({ dbStatus: 'offline', loadFailed: true })
     }
   },
 
   saveToDb: async () => {
-    const { staff, globalTemplates, cellData } = get()
+    const { staff, globalTemplates, cellData, loadFailed } = get()
+    if (loadFailed) return  // ロード失敗時は保存しない
     set({ dbStatus: 'saving' })
     try {
       await Promise.all([

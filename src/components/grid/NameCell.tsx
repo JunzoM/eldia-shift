@@ -33,9 +33,10 @@ export function NameCell({ s }: Props) {
                 fontFamily: "'Noto Sans JP',sans-serif",
               }}
             >
+              <option value="">— なし</option>
               {s.patterns.map(p => (
                 <option key={p.id} value={p.id}>
-                  {p.label}{p.activeFrom ? ` (${p.activeFrom}〜)` : ' (デフォルト)'}
+                  {p.label}{p.activeFrom ? ` (${p.activeFrom}〜)` : ''}
                 </option>
               ))}
             </select>

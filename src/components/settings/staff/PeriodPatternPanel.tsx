@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import type { Staff, PeriodPattern } from '@/types'
 import { useShiftStore } from '@/store/useShiftStore'
 import { PALETTE, OFF_BLOCKS, JP_WD } from '@/lib/constants'
@@ -37,7 +37,7 @@ export function PeriodPatternPanel({ s }: Props) {
   const [form, setForm] = useState<PeriodPattern>({ id: '', label: '', startDate: '', endDate: '', days: {}, colorIdx: 3 })
   const f = (k: keyof PeriodPattern, v: PeriodPattern[keyof PeriodPattern]) => setForm(p => ({ ...p, [k]: v }))
 
-  const allBlocks = [...s.timeBlocks, ...globalTemplates, ...OFF_BLOCKS]
+  const allBlocks = useMemo(() => [...s.timeBlocks, ...globalTemplates, ...OFF_BLOCKS], [s.timeBlocks, globalTemplates])
   const periodPats = s.periodPatterns || []
 
   function startCreate() {
@@ -174,7 +174,7 @@ export function PeriodPatternPanel({ s }: Props) {
               </div>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 3 }}>
                 {dates.slice(0, 14).map(ds => {
-                  const d = new Date(ds), dow = d.getDay()
+                  const d = parseLocalDate(ds), dow = d.getDay()
                   const bid = pp.days[ds], b = bid ? allBlocks.find(x => x.id === bid) : null
                   const bc2 = b ? PALETTE[b.colorIdx] : null
                   return (
