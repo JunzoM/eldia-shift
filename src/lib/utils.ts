@@ -123,17 +123,34 @@ export function getEffective(
     }
   }
 
-  // DEBUG: log when staff has activeFrom patterns
+  // DEBUG: detailed table around activeFrom transition dates
   if (s.patterns.some(p => p.activeFrom)) {
-    const dayIdx = dateObj.getDay()
-    const bid = pat?.days[dayIdx]
-    console.log(
-      `[DBG] ${s.name} | ${dStr}(${['日','月','火','水','木','金','土'][dayIdx]},idx=${dayIdx}) | ` +
-      `selected="${pat?.label}"(activeFrom=${pat?.activeFrom ?? 'none'}) | ` +
-      `bid=days[${dayIdx}]="${bid}" | ` +
-      `patterns: ${s.patterns.map(p => `"${p.label}"(from=${p.activeFrom ?? 'none'} skip=${!!(p.activeFrom && p.activeFrom > dStr)})`).join(', ')} | ` +
-      `daysArr=${JSON.stringify(pat?.days)}`
-    )
+    const activeFroms = s.patterns.filter(p => p.activeFrom).map(p => p.activeFrom!)
+    const isNearTransition = activeFroms.some(af => {
+      const diff = (new Date(af).getTime() - new Date(dStr).getTime()) / 86400000
+      return Math.abs(diff) <= 3
+    })
+    if (isNearTransition) {
+      const dayIdx = dateObj.getDay()
+      const bid = pat?.days[dayIdx]
+      const WD = ['日','月','火','水','木','金','土']
+      console.log(`%c[DBG] ${s.name} | ${dStr}(${WD[dayIdx]}) | ` +
+        `selected="${pat?.label}" activeFrom=${pat?.activeFrom ?? 'none'} | ` +
+        `days[${dayIdx}]="${bid}" | ` +
+        `daysArr 日[0]="${pat?.days[0]}" 月[1]="${pat?.days[1]}" 火[2]="${pat?.days[2]}" 水[3]="${pat?.days[3]}" 木[4]="${pat?.days[4]}" 金[5]="${pat?.days[5]}" 土[6]="${pat?.days[6]}"`,
+        'color:orange;font-weight:bold')
+    }
+    // Print patterns table once per staff per render (on first date = April 1)
+    if (dStr.endsWith('-01')) {
+      const WD = ['日','月','火','水','木','金','土']
+      console.groupCollapsed(`%c[PAT TABLE] ${s.name}`, 'color:purple;font-weight:bold')
+      s.patterns.forEach(p => {
+        const row: Record<string, string> = { label: p.label, activeFrom: p.activeFrom || '(default)' }
+        WD.forEach((w, i) => { row[`${w}[${i}]`] = p.days[i] || '' })
+        console.log(`${p.label} (${p.activeFrom || 'default'}):`, p.days)
+      })
+      console.groupEnd()
+    }
   }
 
   if (!pat) return null
