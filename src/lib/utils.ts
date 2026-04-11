@@ -130,24 +130,26 @@ export function getEffective(
       const diff = (new Date(af).getTime() - new Date(dStr).getTime()) / 86400000
       return Math.abs(diff) <= 3
     })
+    const WD = ['日','月','火','水','木','金','土']
+    const bName = (id: string | undefined) => {
+      if (!id) return '(空)'
+      const b = findBlock(id, s.timeBlocks, globalTemplates)
+      return b ? `${b.short}(${id})` : `?(${id})`
+    }
     if (isNearTransition) {
       const dayIdx = dateObj.getDay()
-      const bid = pat?.days[dayIdx]
-      const WD = ['日','月','火','水','木','金','土']
       console.log(`%c[DBG] ${s.name} | ${dStr}(${WD[dayIdx]}) | ` +
-        `selected="${pat?.label}" activeFrom=${pat?.activeFrom ?? 'none'} | ` +
-        `days[${dayIdx}]="${bid}" | ` +
-        `daysArr 日[0]="${pat?.days[0]}" 月[1]="${pat?.days[1]}" 火[2]="${pat?.days[2]}" 水[3]="${pat?.days[3]}" 木[4]="${pat?.days[4]}" 金[5]="${pat?.days[5]}" 土[6]="${pat?.days[6]}"`,
-        'color:orange;font-weight:bold')
+        `選択="${pat?.label}"(from=${pat?.activeFrom ?? 'デフォルト'}) | ` +
+        `days[${dayIdx}]=${bName(pat?.days[dayIdx])} | ` +
+        `全曜日: ${WD.map((w,i) => `${w}=${bName(pat?.days[i])}`).join(' ')}`,
+        'color:orange;font-weight:bold;font-size:11px')
     }
-    // Print patterns table once per staff per render (on first date = April 1)
+    // 月初に全パターンのdays配列を出力
     if (dStr.endsWith('-01')) {
-      const WD = ['日','月','火','水','木','金','土']
-      console.groupCollapsed(`%c[PAT TABLE] ${s.name}`, 'color:purple;font-weight:bold')
+      console.groupCollapsed(`%c[パターン一覧] ${s.name}`, 'color:purple;font-weight:bold')
       s.patterns.forEach(p => {
-        const row: Record<string, string> = { label: p.label, activeFrom: p.activeFrom || '(default)' }
-        WD.forEach((w, i) => { row[`${w}[${i}]`] = p.days[i] || '' })
-        console.log(`${p.label} (${p.activeFrom || 'default'}):`, p.days)
+        const row = WD.map((w, i) => `${w}=${bName(p.days[i])}`).join('  ')
+        console.log(`"${p.label}" (開始日:${p.activeFrom || 'デフォルト'}) | ${row}`)
       })
       console.groupEnd()
     }
