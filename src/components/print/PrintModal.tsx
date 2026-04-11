@@ -40,7 +40,7 @@ export function PrintModal({ onClose }: Props) {
   const summary = useMemo(() => staff.map(s => {
     let totalH = 0
     monthDates.forEach(d => {
-      if (s.leaveDate && toDateStr(d) > s.leaveDate) return
+      if (s.leaveDate && toDateStr(d) >= s.leaveDate) return
       const eff = getEffective(s, d)
       if (!eff || eff.isOff) return
       if (eff.inTime && eff.outTime) {
@@ -162,8 +162,7 @@ ${pw.innerHTML}
                       </div>
                     </td>
                     {ptDates.map(d => {
-                      const leaveD = s.leaveDate ? new Date(s.leaveDate) : null
-                      const afterLeave = leaveD ? d > leaveD : false
+                      const afterLeave = s.leaveDate ? toDateStr(d) >= s.leaveDate : false
                       const eff = afterLeave ? null : getEffective(s, d)
                       const b = eff?.blockId ? findBlock(eff.blockId, s.timeBlocks, globalTemplates) : null
                       const dow = d.getDay()

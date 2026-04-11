@@ -18,11 +18,11 @@ export function ShiftTable({ dates, viewMode }: Props) {
   const visibleStaff = useMemo(() => staff.filter(s => {
     if (showInactive) return true
     if (!s.leaveDate) return s.active
-    const ld = new Date(s.leaveDate)
-    const leaveYear = ld.getFullYear()
-    const leaveMonth = ld.getMonth()
-    if (year < leaveYear) return true
-    if (year === leaveYear && month <= leaveMonth) return true
+    // Show staff in the month they leave and any earlier month
+    const [leaveY, leaveM] = s.leaveDate.split('-').map(Number)
+    if (year < leaveY) return true
+    if (year === leaveY && month < leaveM) return true  // leaveM is 1-indexed
+    if (year === leaveY && month === leaveM - 1) return true  // same month (month is 0-indexed)
     return false
   }), [staff, showInactive, year, month])
 
@@ -43,7 +43,7 @@ export function ShiftTable({ dates, viewMode }: Props) {
   const summary = useMemo(() => staff.map(s => {
     let totalH = 0, workDays = 0
     monthDates.forEach(d => {
-      if (s.leaveDate && toDateStr(d) > s.leaveDate) return
+      if (s.leaveDate && toDateStr(d) >= s.leaveDate) return
       const eff = getEffective(s, d)
       if (!eff || eff.isOff) return
       if (eff.inTime && eff.outTime) {

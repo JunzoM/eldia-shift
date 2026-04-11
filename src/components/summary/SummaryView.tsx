@@ -14,7 +14,7 @@ export function SummaryView() {
   const summary = useMemo(() => staff.map(s => {
     let totalH = 0, workDays = 0
     monthDates.forEach(d => {
-      if (s.leaveDate && toDateStr(d) > s.leaveDate) return
+      if (s.leaveDate && toDateStr(d) >= s.leaveDate) return
       const eff = getEffective(s, d)
       if (!eff || eff.isOff) return
       if (eff.inTime && eff.outTime) {

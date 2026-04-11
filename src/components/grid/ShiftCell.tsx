@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import type { Staff } from '@/types'
 import { PALETTE } from '@/lib/constants'
-import { isToday, fmtT, findBlock } from '@/lib/utils'
+import { isToday, fmtT, findBlock, toDateStr } from '@/lib/utils'
 import { useShiftStore } from '@/store/useShiftStore'
 import { CellPicker } from '@/components/cell-picker/CellPicker'
 
@@ -15,8 +15,7 @@ export function ShiftCell({ s, dateObj, mode = 'month' }: Props) {
   const [pickerOpen, setPickerOpen] = useState(false)
   const { globalTemplates, getEffective, setCellEntry, clearCell } = useShiftStore()
 
-  const leaveDate = s.leaveDate ? new Date(s.leaveDate) : null
-  const isAfterLeave = leaveDate ? dateObj > leaveDate : false
+  const isAfterLeave = s.leaveDate ? toDateStr(dateObj) >= s.leaveDate : false
 
   const eff = isAfterLeave ? null : getEffective(s, dateObj)
   const b = eff?.blockId ? findBlock(eff.blockId, s.timeBlocks, globalTemplates) : null
