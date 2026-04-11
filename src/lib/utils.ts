@@ -125,7 +125,15 @@ export function getEffective(
 
   // DEBUG: log when staff has activeFrom patterns
   if (s.patterns.some(p => p.activeFrom)) {
-    console.log(`[getEffective] ${s.name} ${dStr}(${['日','月','火','水','木','金','土'][dateObj.getDay()]}) → pat="${pat?.label}" bestFrom="${bestFrom}" days=${JSON.stringify(pat?.days)} getDay=${dateObj.getDay()}`)
+    const dayIdx = dateObj.getDay()
+    const bid = pat?.days[dayIdx]
+    console.log(
+      `[DBG] ${s.name} | ${dStr}(${['日','月','火','水','木','金','土'][dayIdx]},idx=${dayIdx}) | ` +
+      `selected="${pat?.label}"(activeFrom=${pat?.activeFrom ?? 'none'}) | ` +
+      `bid=days[${dayIdx}]="${bid}" | ` +
+      `patterns: ${s.patterns.map(p => `"${p.label}"(from=${p.activeFrom ?? 'none'} skip=${!!(p.activeFrom && p.activeFrom > dStr)})`).join(', ')} | ` +
+      `daysArr=${JSON.stringify(pat?.days)}`
+    )
   }
 
   if (!pat) return null
