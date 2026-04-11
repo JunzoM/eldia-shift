@@ -93,7 +93,11 @@ export function ShiftCell({ s, dateObj, mode = 'month' }: Props) {
         ) : (
           <span style={{ color: '#e2e8f0', fontSize: 16 }}>+</span>
         )}
-        {auto && eff && <span style={{ position: 'absolute', top: 2, right: 2, width: 4, height: 4, borderRadius: '50%', background: '#c9a84c' }} />}
+        {/* 黄ドット = パターン自動 / 青ドット = 手動設定 */}
+        {eff && (auto
+          ? <span style={{ position: 'absolute', top: 2, right: 2, width: 4, height: 4, borderRadius: '50%', background: '#c9a84c' }} />
+          : <span title="手動設定（クリックしてクリア可）" style={{ position: 'absolute', top: 2, right: 2, width: 4, height: 4, borderRadius: '50%', background: '#3b82f6' }} />
+        )}
         {/* 略称はワークシフトのみ下部に表示（休日は上のバッジで表示済み） */}
         {bc && eff && !eff.isOff && <span style={{ position: 'absolute', bottom: 1, left: 0, right: 0, textAlign: 'center', fontSize: 7, color: bc.color, fontWeight: 700 }}>{b?.short}</span>}
       </td>

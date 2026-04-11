@@ -123,38 +123,6 @@ export function getEffective(
     }
   }
 
-  // DEBUG: detailed table around activeFrom transition dates
-  if (s.patterns.some(p => p.activeFrom)) {
-    const activeFroms = s.patterns.filter(p => p.activeFrom).map(p => p.activeFrom!)
-    const isNearTransition = activeFroms.some(af => {
-      const diff = (new Date(af).getTime() - new Date(dStr).getTime()) / 86400000
-      return Math.abs(diff) <= 3
-    })
-    const WD = ['日','月','火','水','木','金','土']
-    const bName = (id: string | undefined) => {
-      if (!id) return '(空)'
-      const b = findBlock(id, s.timeBlocks, globalTemplates)
-      return b ? `${b.short}(${id})` : `?(${id})`
-    }
-    if (isNearTransition) {
-      const dayIdx = dateObj.getDay()
-      console.log(`%c[DBG] ${s.name} | ${dStr}(${WD[dayIdx]}) | ` +
-        `選択="${pat?.label}"(from=${pat?.activeFrom ?? 'デフォルト'}) | ` +
-        `days[${dayIdx}]=${bName(pat?.days[dayIdx])} | ` +
-        `全曜日: ${WD.map((w,i) => `${w}=${bName(pat?.days[i])}`).join(' ')}`,
-        'color:orange;font-weight:bold;font-size:11px')
-    }
-    // 月初に全パターンのdays配列を出力
-    if (dStr.endsWith('-01')) {
-      console.groupCollapsed(`%c[パターン一覧] ${s.name}`, 'color:purple;font-weight:bold')
-      s.patterns.forEach(p => {
-        const row = WD.map((w, i) => `${w}=${bName(p.days[i])}`).join('  ')
-        console.log(`"${p.label}" (開始日:${p.activeFrom || 'デフォルト'}) | ${row}`)
-      })
-      console.groupEnd()
-    }
-  }
-
   if (!pat) return null
   const bid = pat.days[dateObj.getDay()]
   if (!bid) return null
