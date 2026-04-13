@@ -2002,15 +2002,111 @@ ${pw.innerHTML}
         .btn.gold:hover{background:#e8c96a}
         .btn.sm{padding:3px 9px;font-size:11.5px;border-radius:5px}
         .btn.danger{background:#ef4444;color:#fff}
+
+        /* ── Mobile responsive (≤ 768px) ──────────────────────────────────
+           PCレイアウトは一切変更なし。スマホのみ適用。
+        ────────────────────────────────────────────────────────────────── */
+        @media(max-width:768px){
+          /* ── ヘッダー ── */
+          .hdr{
+            height:auto!important;
+            padding:6px 10px!important;
+            flex-wrap:wrap;
+            row-gap:5px;
+            align-items:center;
+          }
+          /* 行1: ロゴ / ホテル名 / DB状態 */
+          .logo{order:1;font-size:14px!important;flex-shrink:0}
+          .hdr-hotel{
+            order:2;
+            flex:1;
+            min-width:0;
+            font-size:11px!important;
+            padding-left:8px!important;
+            white-space:nowrap;
+            overflow:hidden;
+            text-overflow:ellipsis;
+          }
+          .hdr-db{
+            order:3;
+            font-size:10px!important;
+            padding:2px 7px!important;
+            border-radius:10px!important;
+            flex-shrink:0;
+          }
+          /* 行2: タブ（全幅） */
+          .hdr-tabs{order:4;width:100%}
+          .hdr-tabs .tab{
+            flex:1;
+            text-align:center;
+            font-size:12px!important;
+            padding:5px 6px!important;
+            border-radius:12px!important;
+          }
+          /* 行3: 週/月切替 + 日付ナビ + マニュアル */
+          .vt-wrap{order:5;flex-shrink:0}
+          .vt{font-size:11px!important;padding:3px 9px!important}
+          .hdr-date-nav{
+            order:6;
+            flex:1;
+            min-width:0;
+            justify-content:center!important;
+          }
+          .hdr-date-label{
+            font-size:10px!important;
+            min-width:0!important;
+            flex:1;
+            text-align:center;
+            white-space:nowrap;
+            overflow:hidden;
+            text-overflow:ellipsis;
+          }
+          .nav{width:26px!important;height:26px!important;font-size:13px!important}
+          .hdr-manual{
+            order:7;
+            font-size:11px!important;
+            padding:3px 10px!important;
+            margin-left:0!important;
+            flex-shrink:0;
+          }
+
+          /* ── メインパディング縮小 ── */
+          .main-pad{padding:10px!important}
+
+          /* ── シフトグリッド ── */
+          .grid-wrap{
+            max-height:calc(100vh - 210px)!important;
+            border-radius:8px!important;
+          }
+          /* No列を少し狭く */
+          .th-no{width:24px!important;min-width:24px!important}
+          .td-no{width:24px!important;min-width:24px!important}
+          /* 氏名列を80pxに縮小し、sticky位置を調整 */
+          .th-name{left:24px!important;min-width:80px!important;width:80px!important;font-size:10px!important}
+          .td-name{left:24px!important;min-width:80px!important;width:80px!important}
+          /* 入出列のsticky位置を再計算 (24+80=104) */
+          .th-io{left:104px!important}
+          .td-io{left:104px!important}
+          /* ヒントテキスト非表示 */
+          .grid-hint{display:none!important}
+
+          /* ── 集計カード ── */
+          .card{overflow-x:auto}
+
+          /* ── 設定タブ ── */
+          .sub-tabs{flex-wrap:wrap}
+          .sec-tabs{flex-wrap:wrap}
+          .staff-card-hdr{padding:9px 10px!important}
+        }
       `}</style>
 
       {/* ── Header ── */}
       <div className="hdr">
         <div className="logo">SHIFT<span>MGR</span></div>
-        <div style={{fontSize:13,fontWeight:700,color:"rgba(255,255,255,.85)",letterSpacing:".03em",fontFamily:"'Noto Sans JP',sans-serif",borderLeft:"1.5px solid rgba(255,255,255,.2)",paddingLeft:12}}>
+        <div className="hdr-hotel" style={{fontSize:13,fontWeight:700,color:"rgba(255,255,255,.85)",letterSpacing:".03em",fontFamily:"'Noto Sans JP',sans-serif",borderLeft:"1.5px solid rgba(255,255,255,.2)",paddingLeft:12}}>
           HOTEL ELDIA <span style={{color:"#c9a84c"}}>神戸店</span>
         </div>
-        <div style={{display:"flex",gap:3}}>
+        <div className="hdr-tabs" style={{display:"flex",gap:3}}>
           {[["grid","シフト表"],["summary","集計"],["settings","設定"]].map(([v,l])=>(
             <button key={v} className={`tab${view===v?" on":""}`} onClick={()=>setView(v)}>{l}</button>
           ))}
@@ -2020,20 +2116,20 @@ ${pw.innerHTML}
           <button className={`vt${viewMode==="monthly"?" on":""}`} onClick={()=>setViewMode("monthly")}>月</button>
         </div>
         {viewMode==="weekly"?(
-          <div style={{display:"flex",alignItems:"center",gap:5}}>
+          <div className="hdr-date-nav" style={{display:"flex",alignItems:"center",gap:5}}>
             <button className="nav" onClick={prevWeek}>‹</button>
-            <span style={{fontFamily:"'DM Sans',sans-serif",fontWeight:600,fontSize:12,color:"#fff",minWidth:190,textAlign:"center"}}>{weekLabel}</span>
+            <span className="hdr-date-label" style={{fontFamily:"'DM Sans',sans-serif",fontWeight:600,fontSize:12,color:"#fff",minWidth:190,textAlign:"center"}}>{weekLabel}</span>
             <button className="nav" onClick={nextWeek}>›</button>
           </div>
         ):(
-          <div style={{display:"flex",alignItems:"center",gap:5}}>
+          <div className="hdr-date-nav" style={{display:"flex",alignItems:"center",gap:5}}>
             <button className="nav" onClick={prevMonth}>‹</button>
-            <span style={{fontFamily:"'DM Sans',sans-serif",fontWeight:600,fontSize:15,color:"#fff",minWidth:90,textAlign:"center"}}>{year}年 {month+1}月</span>
+            <span className="hdr-date-label" style={{fontFamily:"'DM Sans',sans-serif",fontWeight:600,fontSize:15,color:"#fff",minWidth:90,textAlign:"center"}}>{year}年 {month+1}月</span>
             <button className="nav" onClick={nextMonth}>›</button>
           </div>
         )}
         {/* DB状態インジケーター */}
-        <div style={{
+        <div className="hdr-db" style={{
           display:"flex",alignItems:"center",gap:5,
           fontSize:11,color:"rgba(255,255,255,.7)",
           background:"rgba(255,255,255,.08)",padding:"3px 10px",borderRadius:12,
@@ -2051,7 +2147,7 @@ ${pw.innerHTML}
            dbStatus==="loading"?"読込中…":
            dbStatus==="offline"?"オフライン":"初期化中"}
         </div>
-        <button onClick={()=>setShowManual(true)} style={{
+        <button className="hdr-manual" onClick={()=>setShowManual(true)} style={{
           marginLeft:8,
           background:"rgba(255,255,255,.15)",border:"1px solid rgba(255,255,255,.3)",
           color:"#fff",padding:"4px 14px",borderRadius:16,cursor:"pointer",
@@ -2064,7 +2160,7 @@ ${pw.innerHTML}
 
       {showManual&&<ManualModal onClose={()=>setShowManual(false)}/>}
 
-      <div style={{padding:16}}>
+      <div className="main-pad" style={{padding:16}}>
 
         {/* ── GRID ── */}
         {view==="grid"&&<>
@@ -2074,7 +2170,7 @@ ${pw.innerHTML}
             <label style={{display:"flex",alignItems:"center",gap:5,fontSize:12,color:"#64748b",cursor:"pointer",marginLeft:4}}>
               <input type="checkbox" checked={showInactive} onChange={e=>setShowInactive(e.target.checked)}/>退職者も表示
             </label>
-            <div style={{marginLeft:"auto",fontSize:10.5,color:"#94a3b8"}}>🟡 パターン自動入力　　クリックでシフト選択</div>
+            <div className="grid-hint" style={{marginLeft:"auto",fontSize:10.5,color:"#94a3b8"}}>🟡 パターン自動入力　　クリックでシフト選択</div>
           </div>
 
           <div className="grid-wrap">
