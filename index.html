@@ -1146,7 +1146,7 @@ function CellPicker({ pos, s, globalTemplates, currentBlockId, onSelect, onSelec
 }
 
 // ─── ShiftCell (weekly/monthly shared) ────────────────────────────────────────
-function ShiftCell({ s, dateObj, globalTemplates, cellData, setCellData, getEffective, clearCell, mode="month" }) {
+function ShiftCell({ s, dateObj, globalTemplates, cellData, setCellData, getEffective, clearCell, mode="month", locked=false }) {
   const [pp,setPP]=useState(null);
 
   // 退職日チェック: 退職日が設定されていてその日より後ならグレーアウト
@@ -1181,9 +1181,9 @@ function ShiftCell({ s, dateObj, globalTemplates, cellData, setCellData, getEffe
   return (
     <>
       <td
-        onClick={isAfterLeave?undefined:e=>{const r=e.currentTarget.getBoundingClientRect();setPP({bottom:r.bottom,left:r.left});}}
+        onClick={(isAfterLeave||locked)?undefined:e=>{const r=e.currentTarget.getBoundingClientRect();setPP({bottom:r.bottom,left:r.left});}}
         style={{
-          height:mode==="week"?58:52,textAlign:"center",cursor:isAfterLeave?"default":"pointer",padding:2,
+          height:mode==="week"?58:52,textAlign:"center",cursor:(isAfterLeave||locked)?"default":"pointer",padding:2,
           background:bg,outline:tod&&!isAfterLeave?"2px solid #c9a84c":"none",outlineOffset:"-2px",
           verticalAlign:"middle",border:"1px solid #e2e8f0",position:"relative",userSelect:"none",
           minWidth:W,width:W,
@@ -1208,8 +1208,8 @@ function ShiftCell({ s, dateObj, globalTemplates, cellData, setCellData, getEffe
         )}
         {/* Auto dot */}
         {auto&&eff&&<span style={{position:"absolute",top:2,right:2,width:4,height:4,borderRadius:"50%",background:"#c9a84c"}}/>}
-        {/* Block label */}
-        {bc&&eff&&<span style={{position:"absolute",bottom:1,left:0,right:0,textAlign:"center",fontSize:7,color:bc.color,fontWeight:700}}>{b?.short}</span>}
+        {/* Block label (勤務セルのみ・休日は既にメインに表示済み) */}
+        {bc&&eff&&!eff.isOff&&<span style={{position:"absolute",bottom:1,left:0,right:0,textAlign:"center",fontSize:7,color:bc.color,fontWeight:700}}>{b?.short}</span>}
       </td>
       {pp&&ReactDOM.createPortal(
         <CellPicker pos={pp} s={s} globalTemplates={globalTemplates} currentBlockId={eff?.blockId} onSelect={handleSelect} onSelectCustomTime={handleSelectCustomTime} onClose={()=>setPP(null)}/>,
@@ -1346,6 +1346,26 @@ function ShiftApp() {
 
   function updateStaff(id,fn){setStaff(p=>p.map(s=>s.id===id?fn(s):s));}
 
+  // ロック機能
+  const [locked,setLocked]=useState(false);
+
+  // 時間帯別人数アコーディオン（部署別開閉状態）
+  const [hourlyOpenDepts,setHourlyOpenDepts]=useState({});
+
+  // 時間帯別在籍チェック
+  const HOURS=[9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,0,1,2,3,4,5,6,7,8];
+  function isWorkingAtHour(s,dateObj,hour){
+    const eff=getEffective(s,dateObj);
+    if(!eff||eff.isOff||!eff.inTime||!eff.outTime) return false;
+    const [ih,im]=eff.inTime.split(":").map(Number);
+    const [oh,om]=eff.outTime.split(":").map(Number);
+    const startMin=ih*60+im, endMin=oh*60+om;
+    const hS=hour*60, hE=(hour+1)*60;
+    return endMin>startMin
+      ? startMin<hE&&endMin>hS  // 同日シフト
+      : startMin<hE||endMin>hS; // 日跨ぎシフト
+  }
+
   // 同部署内でスタッフを上下移動して no を振り直す
   function moveStaff(id, dir) {
     setStaff(prev => {
@@ -1433,6 +1453,21 @@ function ShiftApp() {
     });
     return{...s,workDays,totalH:+totalH.toFixed(1)};
   }),[staff,cellData,globalTemplates,year,month]);
+
+  // 週別合計（週表示の合計列用）
+  const weeklySummary=useMemo(()=>staff.map(s=>{
+    let totalH=0,workDays=0;
+    weekDates.forEach(d=>{
+      const eff=getEffective(s,d);
+      if(!eff||eff.isOff) return;
+      if(eff.inTime&&eff.outTime){
+        const [ih,im]=eff.inTime.split(":").map(Number);
+        const [oh,om]=eff.outTime.split(":").map(Number);
+        workDays++;totalH+=calcNetH(ih,im,oh,om);
+      }
+    });
+    return{id:s.id,workDays,totalH:+totalH.toFixed(1)};
+  }),[staff,cellData,globalTemplates,weekDates]);
 
   const weekLabel=`${weekDates[0].getFullYear()}年 ${weekDates[0].getMonth()+1}月${weekDates[0].getDate()}日（月）〜 ${weekDates[6].getMonth()+1}月${weekDates[6].getDate()}日（日）`;
 
@@ -2002,6 +2037,7 @@ ${pw.innerHTML}
         .btn.gold:hover{background:#e8c96a}
         .btn.sm{padding:3px 9px;font-size:11.5px;border-radius:5px}
         .btn.danger{background:#ef4444;color:#fff}
+        @media print{.no-print{display:none!important}}
 
         /* ── Mobile responsive (≤ 768px) ──────────────────────────────────
            PCレイアウトは一切変更なし。スマホのみ適用。
@@ -2067,6 +2103,13 @@ ${pw.innerHTML}
             font-size:11px!important;
             padding:3px 10px!important;
             margin-left:0!important;
+            flex-shrink:0;
+          }
+          .hdr-lock{
+            order:8;
+            margin-left:0!important;
+            font-size:15px!important;
+            padding:3px 8px!important;
             flex-shrink:0;
           }
 
@@ -2156,7 +2199,48 @@ ${pw.innerHTML}
         }}>
           ❓ マニュアル
         </button>
+        {/* ── ロックボタン ── */}
+        <button
+          className="hdr-lock"
+          onClick={()=>setLocked(v=>!v)}
+          title={locked?"🔓 クリックでロック解除":"🔒 クリックで編集ロック"}
+          style={{
+            marginLeft:4,
+            background:locked?"#dc2626":"rgba(255,255,255,.15)",
+            border:locked?"1.5px solid #fca5a5":"1px solid rgba(255,255,255,.3)",
+            color:"#fff",padding:"4px 11px",borderRadius:16,cursor:"pointer",
+            fontSize:17,display:"flex",alignItems:"center",flexShrink:0,
+            boxShadow:locked?"0 0 0 2px #fca5a5 inset":"none",
+          }}
+        >{locked?"🔒":"🔓"}</button>
       </div>
+
+      {/* ── ロックステータスバー ── */}
+      {locked&&(
+        <div style={{
+          background:"#b91c1c",color:"#fff",
+          padding:"5px 16px",fontSize:12.5,fontWeight:700,
+          textAlign:"center",letterSpacing:".04em",
+          display:"flex",alignItems:"center",justifyContent:"center",gap:10,
+          boxShadow:"0 2px 8px rgba(185,28,28,.25)",
+        }}>
+          🔒 編集ロック中 — セルをタップしても変更できません
+          <button onClick={()=>setLocked(false)} style={{
+            background:"rgba(255,255,255,.2)",border:"1px solid rgba(255,255,255,.5)",
+            color:"#fff",padding:"2px 12px",borderRadius:10,cursor:"pointer",
+            fontSize:11.5,fontFamily:"'Noto Sans JP',sans-serif",fontWeight:700,
+          }}>🔓 ロック解除</button>
+        </div>
+      )}
+      {!locked&&(
+        <div style={{
+          background:"#166534",color:"rgba(255,255,255,.85)",
+          padding:"3px 16px",fontSize:11,
+          textAlign:"center",
+        }}>
+          🔓 編集可能 — 🔒ボタンで誤操作を防止できます
+        </div>
+      )}
 
       {showManual&&<ManualModal onClose={()=>setShowManual(false)}/>}
 
@@ -2211,7 +2295,7 @@ ${pw.innerHTML}
                       const ap=s.activePatternId?s.patterns.find(p=>p.id===s.activePatternId):null;
                       const pc=ap?PALETTE[ap.colorIdx]:null;
                       return(
-                        <tr key={s.id}>
+                        <tr key={s.id} style={{pageBreakInside:"avoid"}}>
                           <td className="td-no">{s.no}</td>
                           <td className="td-name">
                             <div style={{display:"flex",flexDirection:"column",gap:2,padding:"3px 0"}}>
@@ -2246,12 +2330,91 @@ ${pw.innerHTML}
                               cellData={cellData} setCellData={setCellData}
                               getEffective={getEffective} clearCell={clearCell}
                               mode={viewMode==="weekly"?"week":"month"}
+                              locked={locked}
                             />
                           ))}
-                          <td className="td-sum">{sm?`${sm.totalH}h`:""}</td>
+                          {(()=>{
+                            const wsm=weeklySummary.find(x=>x.id===s.id);
+                            const disp=viewMode==="weekly"
+                              ?(wsm?`${wsm.totalH}h`:"")
+                              :(sm?`${sm.totalH}h`:"");
+                            return <td className="td-sum">{disp}</td>;
+                          })()}
                         </tr>
                       );
                     }),
+                    // ── 時間帯別在籍人数アコーディオン（印刷非対象）──
+                    ...(()=>{
+                      const isOpen=!!hourlyOpenDepts[dept.id];
+                      const dc2=PALETTE[dept.colorIdx];
+                      const rows=[];
+                      rows.push(
+                        <tr key={`hourly-toggle-${dept.id}`} className="no-print">
+                          <td colSpan={headerDates.length+4} style={{
+                            padding:"2px 8px",
+                            background:dc2.bg,
+                            borderTop:"1px solid #e2e8f0",
+                          }}>
+                            <button
+                              onClick={()=>setHourlyOpenDepts(p=>({...p,[dept.id]:!p[dept.id]}))}
+                              style={{
+                                background:"none",border:"none",cursor:"pointer",
+                                fontSize:11.5,fontWeight:700,color:dc2.color,
+                                display:"flex",alignItems:"center",gap:5,padding:"3px 0",
+                                fontFamily:"'Noto Sans JP',sans-serif",
+                              }}
+                            >
+                              <span style={{fontSize:10}}>{isOpen?"▼":"▶"}</span>
+                              時間帯別在籍人数
+                              {!isOpen&&<span style={{fontSize:10,color:"#94a3b8",fontWeight:400,marginLeft:4}}>— クリックで展開</span>}
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                      if(isOpen){
+                        HOURS.forEach(hour=>{
+                          const isNight=hour>=0&&hour<=8;
+                          const rowBg=isNight?"#eff6ff":"#fafbff";
+                          rows.push(
+                            <tr key={`hr-${dept.id}-${hour}`} className="no-print">
+                              <td className="td-no" style={{background:rowBg,height:22,padding:0,textAlign:"center",fontSize:8,color:"#94a3b8"}}>
+                                {isNight&&"明"}
+                              </td>
+                              <td className="td-name" style={{
+                                background:rowBg,fontSize:10.5,fontWeight:700,
+                                color:isNight?"#3b82f6":"#475569",
+                                padding:"0 8px",height:22,
+                              }}>
+                                {String(hour).padStart(2,"0")}:00
+                              </td>
+                              <td className="td-io" style={{background:rowBg,height:22}}/>
+                              {headerDates.map(d=>{
+                                const cnt=dept.members.filter(s=>isWorkingAtHour(s,d,hour)).length;
+                                const dow=d.getDay();
+                                const cellBg=cnt>0
+                                  ?(isNight?"#bfdbfe":"#bbf7d0")
+                                  :(dow===0?"#fff5f5":dow===6?"#f0f5ff":rowBg);
+                                return(
+                                  <td key={d.toISOString()} style={{
+                                    textAlign:"center",
+                                    fontSize:cnt>2?13:11,
+                                    fontWeight:cnt>2?900:cnt>0?700:400,
+                                    color:cnt>2?"#0f2044":cnt>0?(isNight?"#1d4ed8":"#065f46"):"#d1d5db",
+                                    background:cellBg,
+                                    border:"1px solid #e2e8f0",
+                                    padding:0,height:22,
+                                  }}>
+                                    {cnt>0?cnt:""}
+                                  </td>
+                                );
+                              })}
+                              <td className="td-sum" style={{background:rowBg,height:22}}/>
+                            </tr>
+                          );
+                        });
+                      }
+                      return rows;
+                    })(),
                   ];
                 })}
               </tbody>
