@@ -1347,7 +1347,7 @@ function ShiftApp() {
   function updateStaff(id,fn){setStaff(p=>p.map(s=>s.id===id?fn(s):s));}
 
   // ロック機能
-  const [locked,setLocked]=useState(false);
+  const [locked,setLocked]=useState(true); // デフォルトはロック状態
 
   // 時間帯別人数アコーディオン（部署別開閉状態）
   const [hourlyOpenDepts,setHourlyOpenDepts]=useState({});
@@ -1442,7 +1442,9 @@ function ShiftApp() {
 
   const summary=useMemo(()=>staff.map(s=>{
     let totalH=0,workDays=0;
+    const leaveDate=s.leaveDate?new Date(s.leaveDate):null;
     monthDates.forEach(d=>{
+      if(leaveDate&&d>leaveDate) return; // 退職日以降はスキップ
       const eff=getEffective(s,d);
       if(!eff||eff.isOff) return;
       if(eff.inTime&&eff.outTime){
@@ -1457,7 +1459,9 @@ function ShiftApp() {
   // 週別合計（週表示の合計列用）
   const weeklySummary=useMemo(()=>staff.map(s=>{
     let totalH=0,workDays=0;
+    const leaveDate=s.leaveDate?new Date(s.leaveDate):null;
     weekDates.forEach(d=>{
+      if(leaveDate&&d>leaveDate) return; // 退職日以降はスキップ
       const eff=getEffective(s,d);
       if(!eff||eff.isOff) return;
       if(eff.inTime&&eff.outTime){
