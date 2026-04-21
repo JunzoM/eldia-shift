@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref, watch } from 'vue'
 import type { CellData, DbStatus } from '@/types'
-import { dbLoad, dbSave, sbClient } from '@/lib/supabase'
+import { dbLoad, dbSave } from '@/lib/supabase'
 import { cellKey } from '@/utils/shiftLogic'
 import { INIT_STAFF } from '@/constants/initialData'
 import { INIT_GLOBAL_TEMPLATES } from '@/constants/initialData'
@@ -10,17 +10,12 @@ import { useTemplateStore } from './useTemplateStore'
 
 export const useShiftStore = defineStore('shift', () => {
   const cellData = ref<CellData>({})
-  const dbStatus = ref<DbStatus>(sbClient ? 'init' : 'offline')
+  const dbStatus = ref<DbStatus>('init')
 
   let saveTimer: ReturnType<typeof setTimeout> | null = null
   let watcherReady = false
 
   async function loadAll() {
-    if (!sbClient) {
-      dbStatus.value = 'offline'
-      return
-    }
-
     dbStatus.value = 'loading'
     const staffStore = useStaffStore()
     const templateStore = useTemplateStore()

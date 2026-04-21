@@ -1,12 +1,12 @@
 import { createClient } from '@supabase/supabase-js'
 
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string
-const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string
+const SUPABASE_URL = (import.meta.env.VITE_SUPABASE_URL as string | undefined)
+  ?? 'https://yaslfksvlvdqlkjrnlfr.supabase.co'
 
-export const sbClient =
-  SUPABASE_URL && SUPABASE_ANON_KEY
-    ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
-    : null
+const SUPABASE_ANON_KEY = (import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined)
+  ?? 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inlhc2xma3N2bHZkcWxranJubGZyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM4NzIxMTAsImV4cCI6MjA4OTQ0ODExMH0.1BJktZH4GwsuRzmPyTL1w1GBxhVUtGyun12rwpKBN9U'
+
+export const sbClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
 
 export async function dbLoad(key: string): Promise<unknown | null> {
   if (!sbClient) return null
