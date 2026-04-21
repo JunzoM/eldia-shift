@@ -1,0 +1,71 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --brand-bg:       #f5f5f5;
+  --brand-surface:  #ffffff;
+  --brand-surface2: #e8e8ee;
+  --brand-border:   #c0c0c0;
+  --brand-accent:   #e11d48;
+  --brand-text:     #1a1614;
+  --brand-muted:    #6b6456;
+  --brand-red:      #c0212e;
+  --brand-yellow:   #9c6d00;
+  --brand-green:    #2d7a52;
+  --header-bg:      rgba(255, 255, 255, 0.97);
+}
+
+.dark {
+  --brand-bg:       #0f1117;
+  --brand-surface:  #1a1d27;
+  --brand-surface2: #232635;
+  --brand-border:   #2e3248;
+  --brand-accent:   #fb7185;
+  --brand-text:     #e8e2d4;
+  --brand-muted:    #7a7a8a;
+  --brand-red:      #ff5f6d;
+  --brand-yellow:   #ffc048;
+  --brand-green:    #4caf7d;
+  --header-bg:      rgba(15, 17, 23, 0.97);
+}
+
+html {
+  -webkit-tap-highlight-color: transparent;
+}
+
+body {
+  overscroll-behavior: none;
+}
+
+.scrollbar-hide {
+  scrollbar-width: none;
+}
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
+/* ステータスバッジ */
+.status-badge-open     { @apply bg-red-100 text-red-700 text-xs font-bold px-2 py-0.5 rounded-full; }
+.status-badge-progress { @apply bg-amber-100 text-amber-700 text-xs font-bold px-2 py-0.5 rounded-full; }
+.status-badge-done     { @apply bg-green-100 text-green-700 text-xs font-bold px-2 py-0.5 rounded-full; }
+
+.dark .status-badge-open     { @apply bg-red-500/20 text-red-400; }
+.dark .status-badge-progress { @apply bg-yellow-500/20 text-yellow-400; }
+.dark .status-badge-done     { @apply bg-green-500/20 text-green-400; }
+
+/* トランジション */
+.overlay-enter-active,
+.overlay-leave-active { transition: opacity 0.2s ease; }
+.overlay-enter-from,
+.overlay-leave-to     { opacity: 0; }
+
+.panel-in-enter-active,
+.panel-in-leave-active { transition: all 0.25s ease; }
+.panel-in-enter-from,
+.panel-in-leave-to     { opacity: 0; transform: translateX(24px); }
+
+.toast-enter-active,
+.toast-leave-active { transition: all 0.25s; }
+.toast-enter-from,
+.toast-leave-to     { opacity: 0; transform: translateX(-50%) translateY(10px); }
