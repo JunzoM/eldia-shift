@@ -86,6 +86,13 @@ const uid    = () => Math.random().toString(36).slice(2,8);
 const fmtT   = (h,m) => `${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}`;
 const fmtTP  = (h,m) => `${h}:${String(m).padStart(2,"0")}`;  // 印刷用: 先頭ゼロなし
 const calcH  = (ih,im,oh,om) => { if(ih==null)return 0; let d=(oh*60+om)-(ih*60+im); if(d<=0)d+=1440; return +(d/60).toFixed(1); };
+// 深夜時間帯 22:00-5:00 との重複時間（時間単位）を返す
+const calcNightH = (ih,im,oh,om) => {
+  const s=ih*60+im, e=oh*60+om;
+  function ov(a,b,c,d){return Math.max(0,Math.min(b,d)-Math.max(a,c))/60;}
+  if(e>s) return ov(s,e,0,300)+ov(s,e,1320,1440); // 同日シフト
+  return ov(s,1440,1320,1440)+ov(0,e,0,300);       // 日跨ぎシフト
+};
 const getDays  = (y,m) => new Date(y,m+1,0).getDate();
 const getDow   = (y,m,d) => new Date(y,m,d).getDay();
 const getMondayOf = date => {
@@ -131,56 +138,56 @@ const INIT_GLOBAL_TEMPLATES = [
 // timeBlocks = このスタッフ専用の時間テンプレート
 // patterns   = 週間パターン（days[0..6]にblockIdを格納）
 const INIT_STAFF = [
-  { id:1,  no:1,  name:"宮本賢央",  deptId:"front",   active:true,  joinDate:"2024-04-01", leaveDate:"",
+  { id:1,  no:1,  name:"宮本賢央",  deptId:"front",   active:true,  joinDate:"2024-04-01", leaveDate:"", hourlyRate:1079,
     timeBlocks:[
       { id:"b1a", label:"宮本_昼",  short:"昼", inH:9,  inM:0, outH:15, outM:0, colorIdx:6 },
       { id:"b1b", label:"宮本_夜",  short:"夜", inH:15, inM:0, outH:21, outM:0, colorIdx:8 },
     ],
     patterns:[{id:"p1",label:"通常",colorIdx:0,days:["off1","b1a","b1b","off1","b1a","b1b","off1"]}],
     activePatternId:"p1" , periodPatterns:[] },
-  { id:2,  no:2,  name:"村井淳三",  deptId:"front",   active:true,  joinDate:"2023-01-01", leaveDate:"",
+  { id:2,  no:2,  name:"村井淳三",  deptId:"front",   active:true,  joinDate:"2023-01-01", leaveDate:"", hourlyRate:1079,
     timeBlocks:[
       { id:"b2a", label:"村井_昼",  short:"昼", inH:9,  inM:0, outH:21, outM:0, colorIdx:0 },
     ],
     patterns:[{id:"p2",label:"通常",colorIdx:0,days:["b2a","b2a","b2a","b2a","b2a","off1","off1"]}],
     activePatternId:"p2" , periodPatterns:[] },
-  { id:3,  no:3,  name:"天野秀",    deptId:"front",   active:true,  joinDate:"2023-06-01", leaveDate:"", timeBlocks:[], patterns:[], activePatternId:null, periodPatterns:[] },
-  { id:4,  no:4,  name:"坂井孝之",  deptId:"front",   active:true,  joinDate:"2024-01-01", leaveDate:"", timeBlocks:[], patterns:[], activePatternId:null, periodPatterns:[] },
-  { id:5,  no:5,  name:"高",        deptId:"front",   active:true,  joinDate:"2024-06-01", leaveDate:"", timeBlocks:[], patterns:[], activePatternId:null, periodPatterns:[] },
-  { id:6,  no:6,  name:"ニマンティ",deptId:"front",   active:true,  joinDate:"2024-01-01", leaveDate:"", timeBlocks:[], patterns:[], activePatternId:null, periodPatterns:[] },
-  { id:7,  no:7,  name:"ピア",      deptId:"front",   active:true,  joinDate:"2024-03-01", leaveDate:"", timeBlocks:[], patterns:[], activePatternId:null, periodPatterns:[] },
-  { id:8,  no:8,  name:"カイン",    deptId:"front",   active:true,  joinDate:"2024-01-01", leaveDate:"", timeBlocks:[], patterns:[], activePatternId:null, periodPatterns:[] },
-  { id:9,  no:9,  name:"ラビィ",    deptId:"front",   active:true,  joinDate:"2024-05-01", leaveDate:"", timeBlocks:[], patterns:[], activePatternId:null, periodPatterns:[] },
-  { id:10, no:10, name:"岩倉直輝",  deptId:"front",   active:true,  joinDate:"2024-04-01", leaveDate:"", timeBlocks:[], patterns:[], activePatternId:null, periodPatterns:[] },
-  { id:11, no:11, name:"ショボン",  deptId:"front",   active:true,  joinDate:"2024-07-01", leaveDate:"", timeBlocks:[], patterns:[], activePatternId:null, periodPatterns:[] },
-  { id:12, no:12, name:"ザハン",    deptId:"front",   active:true,  joinDate:"2024-08-01", leaveDate:"", timeBlocks:[], patterns:[], activePatternId:null, periodPatterns:[] },
-  { id:13, no:13, name:"タンジナ",  deptId:"front",   active:true,  joinDate:"2024-09-01", leaveDate:"", timeBlocks:[], patterns:[], activePatternId:null, periodPatterns:[] },
-  { id:14, no:14, name:"カマラ",    deptId:"front",   active:false, joinDate:"2024-01-01", leaveDate:"2026-03-08", timeBlocks:[], patterns:[], activePatternId:null, periodPatterns:[] },
-  { id:15, no:15, name:"スレス",    deptId:"front",   active:true,  joinDate:"2024-10-01", leaveDate:"", timeBlocks:[], patterns:[], activePatternId:null, periodPatterns:[] },
-  { id:16, no:16, name:"クマリ",    deptId:"front",   active:false, joinDate:"2024-01-01", leaveDate:"2026-03-06", timeBlocks:[], patterns:[], activePatternId:null, periodPatterns:[] },
-  { id:17, no:17, name:"サラマ",    deptId:"front",   active:true,  joinDate:"2025-01-01", leaveDate:"", timeBlocks:[], patterns:[], activePatternId:null, periodPatterns:[] },
-  { id:18, no:18, name:"ゴーデル",  deptId:"front",   active:true,  joinDate:"2025-03-08", leaveDate:"", timeBlocks:[], patterns:[], activePatternId:null, periodPatterns:[] },
-  { id:19, no:19, name:"バラット",  deptId:"front",   active:false, joinDate:"2025-01-01", leaveDate:"2026-03-10", timeBlocks:[], patterns:[], activePatternId:null, periodPatterns:[] },
-  { id:20, no:20, name:"倉貫加代",  deptId:"front",   active:true,  joinDate:"2024-04-01", leaveDate:"",
+  { id:3,  no:3,  name:"天野秀",    deptId:"front",   active:true,  joinDate:"2023-06-01", leaveDate:"", hourlyRate:1079, timeBlocks:[], patterns:[], activePatternId:null, periodPatterns:[] },
+  { id:4,  no:4,  name:"坂井孝之",  deptId:"front",   active:true,  joinDate:"2024-01-01", leaveDate:"", hourlyRate:1079, timeBlocks:[], patterns:[], activePatternId:null, periodPatterns:[] },
+  { id:5,  no:5,  name:"高",        deptId:"front",   active:true,  joinDate:"2024-06-01", leaveDate:"", hourlyRate:1079, timeBlocks:[], patterns:[], activePatternId:null, periodPatterns:[] },
+  { id:6,  no:6,  name:"ニマンティ",deptId:"front",   active:true,  joinDate:"2024-01-01", leaveDate:"", hourlyRate:1079, timeBlocks:[], patterns:[], activePatternId:null, periodPatterns:[] },
+  { id:7,  no:7,  name:"ピア",      deptId:"front",   active:true,  joinDate:"2024-03-01", leaveDate:"", hourlyRate:1079, timeBlocks:[], patterns:[], activePatternId:null, periodPatterns:[] },
+  { id:8,  no:8,  name:"カイン",    deptId:"front",   active:true,  joinDate:"2024-01-01", leaveDate:"", hourlyRate:1079, timeBlocks:[], patterns:[], activePatternId:null, periodPatterns:[] },
+  { id:9,  no:9,  name:"ラビィ",    deptId:"front",   active:true,  joinDate:"2024-05-01", leaveDate:"", hourlyRate:1079, timeBlocks:[], patterns:[], activePatternId:null, periodPatterns:[] },
+  { id:10, no:10, name:"岩倉直輝",  deptId:"front",   active:true,  joinDate:"2024-04-01", leaveDate:"", hourlyRate:1079, timeBlocks:[], patterns:[], activePatternId:null, periodPatterns:[] },
+  { id:11, no:11, name:"ショボン",  deptId:"front",   active:true,  joinDate:"2024-07-01", leaveDate:"", hourlyRate:1079, timeBlocks:[], patterns:[], activePatternId:null, periodPatterns:[] },
+  { id:12, no:12, name:"ザハン",    deptId:"front",   active:true,  joinDate:"2024-08-01", leaveDate:"", hourlyRate:1079, timeBlocks:[], patterns:[], activePatternId:null, periodPatterns:[] },
+  { id:13, no:13, name:"タンジナ",  deptId:"front",   active:true,  joinDate:"2024-09-01", leaveDate:"", hourlyRate:1079, timeBlocks:[], patterns:[], activePatternId:null, periodPatterns:[] },
+  { id:14, no:14, name:"カマラ",    deptId:"front",   active:false, joinDate:"2024-01-01", leaveDate:"2026-03-08", hourlyRate:1079, timeBlocks:[], patterns:[], activePatternId:null, periodPatterns:[] },
+  { id:15, no:15, name:"スレス",    deptId:"front",   active:true,  joinDate:"2024-10-01", leaveDate:"", hourlyRate:1079, timeBlocks:[], patterns:[], activePatternId:null, periodPatterns:[] },
+  { id:16, no:16, name:"クマリ",    deptId:"front",   active:false, joinDate:"2024-01-01", leaveDate:"2026-03-06", hourlyRate:1079, timeBlocks:[], patterns:[], activePatternId:null, periodPatterns:[] },
+  { id:17, no:17, name:"サラマ",    deptId:"front",   active:true,  joinDate:"2025-01-01", leaveDate:"", hourlyRate:1079, timeBlocks:[], patterns:[], activePatternId:null, periodPatterns:[] },
+  { id:18, no:18, name:"ゴーデル",  deptId:"front",   active:true,  joinDate:"2025-03-08", leaveDate:"", hourlyRate:1079, timeBlocks:[], patterns:[], activePatternId:null, periodPatterns:[] },
+  { id:19, no:19, name:"バラット",  deptId:"front",   active:false, joinDate:"2025-01-01", leaveDate:"2026-03-10", hourlyRate:1079, timeBlocks:[], patterns:[], activePatternId:null, periodPatterns:[] },
+  { id:20, no:20, name:"倉貫加代",  deptId:"front",   active:true,  joinDate:"2024-04-01", leaveDate:"", hourlyRate:1079,
     timeBlocks:[{ id:"b20a", label:"倉貫_夜", short:"夜", inH:20, inM:30, outH:6,  outM:30, colorIdx:8 }],
     patterns:[{id:"p20",label:"夜勤週",colorIdx:8,days:["b20a","off1","b20a","off1","off1","b20a","b20a"]}],
     activePatternId:"p20" , periodPatterns:[] },
-  { id:21, no:21, name:"坂元拓也",  deptId:"front",   active:true,  joinDate:"2024-04-01", leaveDate:"",
+  { id:21, no:21, name:"坂元拓也",  deptId:"front",   active:true,  joinDate:"2024-04-01", leaveDate:"", hourlyRate:1079,
     timeBlocks:[{ id:"b21a", label:"坂元_夜", short:"夜", inH:20, inM:0, outH:7,  outM:0, colorIdx:8 }],
     patterns:[{id:"p21",label:"夜勤週",colorIdx:8,days:["b21a","b21a","b21a","b21a","b21a","off1","off1"]}],
     activePatternId:"p21" , periodPatterns:[] },
-  { id:22, no:1,  name:"川田",      deptId:"kitchen", active:true,  joinDate:"2024-01-01", leaveDate:"",
+  { id:22, no:1,  name:"川田",      deptId:"kitchen", active:true,  joinDate:"2024-01-01", leaveDate:"", hourlyRate:1079,
     timeBlocks:[{ id:"bk1a", label:"川田_朝", short:"朝", inH:9, inM:0, outH:13, outM:0, colorIdx:2 }],
-    patterns:[], activePatternId:null },
-  { id:23, no:2,  name:"赤松",      deptId:"kitchen", active:true,  joinDate:"2024-01-01", leaveDate:"",
+    patterns:[], activePatternId:null, periodPatterns:[] },
+  { id:23, no:2,  name:"赤松",      deptId:"kitchen", active:true,  joinDate:"2024-01-01", leaveDate:"", hourlyRate:1079,
     timeBlocks:[{ id:"bk2a", label:"赤松_日", short:"日", inH:9, inM:0, outH:21, outM:0, colorIdx:2 }],
     patterns:[{id:"pk2",label:"通常",colorIdx:2,days:["bk2a","bk2a","off1","bk2a","bk2a","bk2a","bk2a"]}],
     activePatternId:"pk2" , periodPatterns:[] },
-  { id:24, no:3,  name:"木戸",      deptId:"kitchen", active:true,  joinDate:"2024-01-01", leaveDate:"",
+  { id:24, no:3,  name:"木戸",      deptId:"kitchen", active:true,  joinDate:"2024-01-01", leaveDate:"", hourlyRate:1079,
     timeBlocks:[{ id:"bk3a", label:"木戸_夜", short:"夜", inH:21, inM:0, outH:9, outM:0, colorIdx:8 }],
     patterns:[{id:"pk3",label:"夜勤",colorIdx:8,days:["bk3a","off1","bk3a","bk3a","bk3a","bk3a","bk3a"]}],
     activePatternId:"pk3" , periodPatterns:[] },
-  { id:25, no:4,  name:"木戸Jr",    deptId:"kitchen", active:true,  joinDate:"2024-01-01", leaveDate:"", timeBlocks:[], patterns:[], activePatternId:null, periodPatterns:[] },
+  { id:25, no:4,  name:"木戸Jr",    deptId:"kitchen", active:true,  joinDate:"2024-01-01", leaveDate:"", hourlyRate:1079, timeBlocks:[], patterns:[], activePatternId:null, periodPatterns:[] },
 ];
 
 // ─── Block lookup helpers ──────────────────────────────────────────────────────
@@ -1410,7 +1417,7 @@ function ShiftApp() {
   function addStaff(){
     if(!newStaff.name.trim())return;
     const maxNo=staff.filter(s=>s.deptId===newStaff.deptId).reduce((m,s)=>Math.max(m,s.no),0);
-    setStaff(p=>[...p,{id:nextId.current++,no:maxNo+1,name:newStaff.name.trim(),deptId:newStaff.deptId,active:true,joinDate:"",leaveDate:"",timeBlocks:[],patterns:[],activePatternId:null,periodPatterns:[]}]);
+    setStaff(p=>[...p,{id:nextId.current++,no:maxNo+1,name:newStaff.name.trim(),deptId:newStaff.deptId,active:true,joinDate:"",leaveDate:"",hourlyRate:1079,timeBlocks:[],patterns:[],activePatternId:null,periodPatterns:[]}]);
     setNewStaff({name:"",deptId:"front"});setAddingStaff(false);
   }
 
@@ -1476,6 +1483,73 @@ function ShiftApp() {
   }),[staff,cellData,globalTemplates,weekDates]);
 
   const weekLabel=`${weekDates[0].getFullYear()}年 ${weekDates[0].getMonth()+1}月${weekDates[0].getDate()}日（月）〜 ${weekDates[6].getMonth()+1}月${weekDates[6].getDate()}日（日）`;
+
+  // 給与計算（兵庫県最低賃金基準）
+  // 通常（昼）×1.0 / 通常（深夜22-5時）×1.25 / 時間外（昼）×1.25 / 時間外（深夜）×1.5
+  const salary=useMemo(()=>visibleStaff.map(s=>{
+    const rate=s.hourlyRate||0;
+    const leaveDate=s.leaveDate?new Date(s.leaveDate):null;
+    let totalRegDayH=0,totalRegNightH=0,totalDailyOTDayH=0,totalDailyOTNightH=0;
+    const weekMap={};
+    monthDates.forEach(d=>{
+      if(leaveDate&&d>leaveDate) return;
+      const eff=getEffective(s,d);
+      if(!eff||eff.isOff||!eff.inTime||!eff.outTime) return;
+      const [ih,im]=eff.inTime.split(":").map(Number);
+      const [oh,om]=eff.outTime.split(":").map(Number);
+      const grossH=calcH(ih,im,oh,om);
+      const netH=calcNetH(ih,im,oh,om);
+      if(netH<=0) return;
+      const grossNightH=calcNightH(ih,im,oh,om);
+      // 休憩時間を夜/昼に比例配分してネット深夜時間を算出
+      const nightNetH=+(grossNightH*(netH/grossH)).toFixed(4);
+      const dayNetH=netH-nightNetH;
+      // 日次時間外（>8h/日）
+      const dailyOTH=Math.max(0,netH-8);
+      const regH=netH-dailyOTH;
+      const nightRatio=netH>0?nightNetH/netH:0;
+      const dailyOTNightH=dailyOTH*nightRatio;
+      const dailyOTDayH=dailyOTH*(1-nightRatio);
+      totalDailyOTDayH+=dailyOTDayH;
+      totalDailyOTNightH+=dailyOTNightH;
+      // 週次集計用（通常時間のみ蓄積）
+      const monKey=getMondayOf(d).toISOString().slice(0,10);
+      if(!weekMap[monKey]) weekMap[monKey]={dayH:0,nightH:0};
+      weekMap[monKey].dayH+=dayNetH-dailyOTDayH;
+      weekMap[monKey].nightH+=nightNetH-dailyOTNightH;
+      totalRegDayH+=dayNetH-dailyOTDayH;
+      totalRegNightH+=nightNetH-dailyOTNightH;
+    });
+    // 週次時間外（週40h超の通常時間分）
+    let weeklyOTDayH=0,weeklyOTNightH=0;
+    Object.values(weekMap).forEach(w=>{
+      const weekTotal=w.dayH+w.nightH;
+      if(weekTotal>40){
+        const excess=weekTotal-40;
+        const nr=weekTotal>0?w.nightH/weekTotal:0;
+        weeklyOTNightH+=excess*nr;
+        weeklyOTDayH+=excess*(1-nr);
+      }
+    });
+    // 週次OT分を通常時間から差し引き
+    const finalRegDayH=Math.max(0,totalRegDayH-weeklyOTDayH);
+    const finalRegNightH=Math.max(0,totalRegNightH-weeklyOTNightH);
+    const finalOTDayH=totalDailyOTDayH+weeklyOTDayH;
+    const finalOTNightH=totalDailyOTNightH+weeklyOTNightH;
+    const fmt=v=>+v.toFixed(1);
+    const regularDayPay =Math.round(finalRegDayH *rate*1.00);
+    const regularNightPay=Math.round(finalRegNightH*rate*1.25);
+    const otDayPay      =Math.round(finalOTDayH  *rate*1.25);
+    const otNightPay    =Math.round(finalOTNightH *rate*1.50);
+    return{
+      id:s.id,
+      regularDayH:fmt(finalRegDayH),regularNightH:fmt(finalRegNightH),
+      otDayH:fmt(finalOTDayH),otNightH:fmt(finalOTNightH),
+      regularDayPay,regularNightPay,otDayPay,otNightPay,
+      totalPay:regularDayPay+regularNightPay+otDayPay+otNightPay,
+      hourlyRate:rate,
+    };
+  }),[visibleStaff,cellData,globalTemplates,year,month]);
 
 // ─── ManualModal ──────────────────────────────────────────────────────────────
 function ManualModal({ onClose }) {
@@ -2156,7 +2230,7 @@ ${pw.innerHTML}
           HOTEL ELDIA <span style={{color:"#c9a84c"}}>神戸店</span>
         </div>
         <div className="hdr-tabs" style={{display:"flex",gap:3}}>
-          {[["grid","シフト表"],["summary","集計"],["settings","設定"]].map(([v,l])=>(
+          {[["grid","シフト表"],["summary","集計"],["salary","給与"],["settings","設定"]].map(([v,l])=>(
             <button key={v} className={`tab${view===v?" on":""}`} onClick={()=>setView(v)}>{l}</button>
           ))}
         </div>
@@ -2487,6 +2561,75 @@ ${pw.innerHTML}
           );
         })}
 
+        {/* ── SALARY ── */}
+        {view==="salary"&&staffByDept.map(dept=>{
+          if(dept.members.length===0)return null;
+          const dc=PALETTE[dept.colorIdx];
+          const deptSal=dept.members.map(s=>salary.find(x=>x.id===s.id)).filter(Boolean);
+          const deptTotal=deptSal.reduce((a,x)=>a+x.totalPay,0);
+          const fmtPay=v=>v.toLocaleString("ja-JP");
+          const fmtH=v=>v>0?`${v}h`:"—";
+          return(
+            <div key={dept.id} className="card" style={{borderTop:`3px solid ${dc.color}`,overflowX:"auto"}}>
+              <div className="card-hdr" style={{background:dc.bg,color:dc.color}}>{dept.label} — {year}年 {month+1}月 給与見込</div>
+              <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+                <thead>
+                  <tr>
+                    <th style={{background:"#f8faff",padding:"7px 10px",textAlign:"left",borderBottom:"2px solid #dde3ef",color:"#0f2044",fontWeight:700,minWidth:110}}>スタッフ</th>
+                    <th style={{background:"#f8faff",padding:"7px 8px",textAlign:"center",borderBottom:"2px solid #dde3ef",color:"#475569",fontWeight:600,fontSize:11}}>時給</th>
+                    <th style={{background:"#f0fdf4",padding:"7px 8px",textAlign:"center",borderBottom:"2px solid #dde3ef",color:"#065f46",fontWeight:700,whiteSpace:"nowrap"}}>通常（昼）<br/><span style={{fontWeight:400,fontSize:10}}>×1.00</span></th>
+                    <th style={{background:"#eff6ff",padding:"7px 8px",textAlign:"center",borderBottom:"2px solid #dde3ef",color:"#1d4ed8",fontWeight:700,whiteSpace:"nowrap"}}>通常（深夜）<br/><span style={{fontWeight:400,fontSize:10}}>×1.25</span></th>
+                    <th style={{background:"#fff7ed",padding:"7px 8px",textAlign:"center",borderBottom:"2px solid #dde3ef",color:"#c2410c",fontWeight:700,whiteSpace:"nowrap"}}>時間外（昼）<br/><span style={{fontWeight:400,fontSize:10}}>×1.25</span></th>
+                    <th style={{background:"#fdf4ff",padding:"7px 8px",textAlign:"center",borderBottom:"2px solid #dde3ef",color:"#7e22ce",fontWeight:700,whiteSpace:"nowrap"}}>時間外（深夜）<br/><span style={{fontWeight:400,fontSize:10}}>×1.50</span></th>
+                    <th style={{background:"#f8faff",padding:"7px 10px",textAlign:"right",borderBottom:"2px solid #dde3ef",color:"#0f2044",fontWeight:700}}>見込給与</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {dept.members.map((s,ri)=>{
+                    const sal=salary.find(x=>x.id===s.id);
+                    if(!sal) return null;
+                    const hasRate=sal.hourlyRate>0;
+                    return(
+                      <tr key={s.id} style={{background:ri%2===0?"#fff":"#fafbff"}}>
+                        <td style={{padding:"7px 10px",borderBottom:"1px solid #e2e8f0",fontWeight:600,color:"#0f2044"}}>
+                          <span style={{color:"#94a3b8",fontSize:10,marginRight:5}}>{s.no}</span>{s.name}
+                        </td>
+                        <td style={{padding:"7px 8px",borderBottom:"1px solid #e2e8f0",textAlign:"center",color:"#475569",fontFamily:"'DM Sans',sans-serif"}}>
+                          {hasRate?`¥${fmtPay(sal.hourlyRate)}`:<span style={{color:"#e2e8f0"}}>未設定</span>}
+                        </td>
+                        <td style={{padding:"7px 8px",borderBottom:"1px solid #e2e8f0",textAlign:"center",background:"#f0fdf4"}}>
+                          {hasRate?(<><div style={{fontFamily:"'DM Sans',sans-serif",fontWeight:700,color:"#065f46",fontSize:12}}>{fmtH(sal.regularDayH)}</div><div style={{fontSize:10,color:"#065f46"}}>¥{fmtPay(sal.regularDayPay)}</div></>):<span style={{color:"#d1d5db",fontSize:11}}>—</span>}
+                        </td>
+                        <td style={{padding:"7px 8px",borderBottom:"1px solid #e2e8f0",textAlign:"center",background:"#eff6ff"}}>
+                          {hasRate?(<><div style={{fontFamily:"'DM Sans',sans-serif",fontWeight:700,color:"#1d4ed8",fontSize:12}}>{fmtH(sal.regularNightH)}</div><div style={{fontSize:10,color:"#1d4ed8"}}>¥{fmtPay(sal.regularNightPay)}</div></>):<span style={{color:"#d1d5db",fontSize:11}}>—</span>}
+                        </td>
+                        <td style={{padding:"7px 8px",borderBottom:"1px solid #e2e8f0",textAlign:"center",background:"#fff7ed"}}>
+                          {hasRate?(<><div style={{fontFamily:"'DM Sans',sans-serif",fontWeight:700,color:"#c2410c",fontSize:12}}>{fmtH(sal.otDayH)}</div><div style={{fontSize:10,color:"#c2410c"}}>¥{fmtPay(sal.otDayPay)}</div></>):<span style={{color:"#d1d5db",fontSize:11}}>—</span>}
+                        </td>
+                        <td style={{padding:"7px 8px",borderBottom:"1px solid #e2e8f0",textAlign:"center",background:"#fdf4ff"}}>
+                          {hasRate?(<><div style={{fontFamily:"'DM Sans',sans-serif",fontWeight:700,color:"#7e22ce",fontSize:12}}>{fmtH(sal.otNightH)}</div><div style={{fontSize:10,color:"#7e22ce"}}>¥{fmtPay(sal.otNightPay)}</div></>):<span style={{color:"#d1d5db",fontSize:11}}>—</span>}
+                        </td>
+                        <td style={{padding:"7px 10px",borderBottom:"1px solid #e2e8f0",textAlign:"right"}}>
+                          {hasRate
+                            ?<span style={{background:"#0f2044",color:"#c9a84c",padding:"2px 10px",borderRadius:8,fontFamily:"'DM Sans',sans-serif",fontWeight:700,fontSize:13}}>¥{fmtPay(sal.totalPay)}</span>
+                            :<span style={{color:"#d1d5db",fontSize:11}}>—</span>
+                          }
+                        </td>
+                      </tr>
+                    );
+                  })}
+                  <tr style={{background:"#f8faff",fontWeight:700}}>
+                    <td colSpan={6} style={{padding:"7px 10px",borderTop:"2px solid #dde3ef",color:"#0f2044",fontSize:12}}>部署合計</td>
+                    <td style={{padding:"7px 10px",borderTop:"2px solid #dde3ef",textAlign:"right"}}>
+                      <span style={{background:"#0f2044",color:"#c9a84c",padding:"2px 10px",borderRadius:8,fontFamily:"'DM Sans',sans-serif",fontWeight:700,fontSize:13}}>¥{fmtPay(deptTotal)}</span>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          );
+        })}
+
         {/* ── SETTINGS ── */}
         {view==="settings"&&<>
           <div className="sub-tabs">
@@ -2557,6 +2700,15 @@ ${pw.innerHTML}
                                   style={{...SEL,fontSize:13,padding:"5px 10px"}}>
                                   {depts.map(d=><option key={d.id} value={d.id}>{d.label}</option>)}
                                 </select>
+                              </div>
+                              <div style={{display:"flex",flexDirection:"column",gap:3}}>
+                                <label style={{fontSize:10.5,color:"#64748b",fontWeight:600}}>時給（円）</label>
+                                <div style={{display:"flex",alignItems:"center",gap:3}}>
+                                  <input type="number" min="0" step="1" value={s.hourlyRate||""} placeholder="1079"
+                                    onChange={e=>updateStaff(s.id,p=>({...p,hourlyRate:e.target.value?+e.target.value:0}))}
+                                    style={{...SEL,padding:"4px 8px",fontSize:12,width:72}}/>
+                                  <span style={{fontSize:10.5,color:"#94a3b8"}}>円/時</span>
+                                </div>
                               </div>
                               <div style={{display:"flex",flexDirection:"column",gap:3}}>
                                 <label style={{fontSize:10.5,color:"#64748b",fontWeight:600}}>退職日</label>
