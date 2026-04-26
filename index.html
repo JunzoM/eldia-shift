@@ -1243,6 +1243,7 @@ function ShiftApp() {
   const saveTimer = useRef(null);
   const [view,setView]=useState("grid");
   const [settingsTab,setSettingsTab]=useState("staff");
+  const [bulkRate,setBulkRate]=useState(1079);
   const [openStaffId,setOpenStaffId]=useState(null);
   const [staffSettingSection,setStaffSettingSection]=useState("patterns"); // "patterns" | "timeblocks"
   const [addingStaff,setAddingStaff]=useState(false);
@@ -2562,7 +2563,26 @@ ${pw.innerHTML}
         })}
 
         {/* ── SALARY ── */}
-        {view==="salary"&&staffByDept.map(dept=>{
+        {view==="salary"&&<>
+          {/* 一括時給設定バー */}
+          <div style={{display:"flex",alignItems:"center",gap:8,padding:"10px 14px",background:"#f8faff",border:"1px solid #dde3ef",borderRadius:12,marginBottom:10,flexWrap:"wrap"}}>
+            <span style={{fontSize:12,fontWeight:700,color:"#0f2044"}}>一括時給設定</span>
+            <div style={{display:"flex",alignItems:"center",gap:4}}>
+              <span style={{fontSize:11,color:"#64748b"}}>¥</span>
+              <input type="number" min="0" step="1" value={bulkRate||""}
+                onChange={e=>setBulkRate(e.target.value?+e.target.value:0)}
+                style={{...SEL,padding:"4px 8px",fontSize:13,width:88,fontFamily:"'DM Sans',sans-serif"}}
+                placeholder="1079"/>
+              <span style={{fontSize:11,color:"#64748b"}}>円/時</span>
+            </div>
+            <button
+              onClick={()=>{if(!bulkRate)return;setStaff(p=>p.map(s=>({...s,hourlyRate:bulkRate})));}}
+              style={{padding:"5px 14px",background:"#0f2044",color:"#c9a84c",border:"none",borderRadius:8,fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"'Noto Sans JP',sans-serif"}}>
+              全員に適用
+            </button>
+            <span style={{fontSize:10,color:"#94a3b8"}}>※ 個別の時給は各行または設定タブから変更できます</span>
+          </div>
+          {staffByDept.map(dept=>{
           if(dept.members.length===0)return null;
           const dc=PALETTE[dept.colorIdx];
           const deptSal=dept.members.map(s=>salary.find(x=>x.id===s.id)).filter(Boolean);
@@ -2594,8 +2614,14 @@ ${pw.innerHTML}
                         <td style={{padding:"7px 10px",borderBottom:"1px solid #e2e8f0",fontWeight:600,color:"#0f2044"}}>
                           <span style={{color:"#94a3b8",fontSize:10,marginRight:5}}>{s.no}</span>{s.name}
                         </td>
-                        <td style={{padding:"7px 8px",borderBottom:"1px solid #e2e8f0",textAlign:"center",color:"#475569",fontFamily:"'DM Sans',sans-serif"}}>
-                          {hasRate?`¥${fmtPay(sal.hourlyRate)}`:<span style={{color:"#e2e8f0"}}>未設定</span>}
+                        <td style={{padding:"4px 8px",borderBottom:"1px solid #e2e8f0",textAlign:"center"}}>
+                          <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:2}}>
+                            <span style={{fontSize:10,color:"#94a3b8"}}>¥</span>
+                            <input type="number" min="0" step="1" value={s.hourlyRate||""}
+                              onChange={e=>updateStaff(s.id,p=>({...p,hourlyRate:e.target.value?+e.target.value:0}))}
+                              placeholder="未設定"
+                              style={{width:60,border:"1px solid #dde3ef",borderRadius:5,padding:"2px 4px",fontSize:11,fontFamily:"'DM Sans',sans-serif",textAlign:"right",outline:"none",background:"#fff"}}/>
+                          </div>
                         </td>
                         <td style={{padding:"7px 8px",borderBottom:"1px solid #e2e8f0",textAlign:"center",background:"#f0fdf4"}}>
                           {hasRate?(<><div style={{fontFamily:"'DM Sans',sans-serif",fontWeight:700,color:"#065f46",fontSize:12}}>{fmtH(sal.regularDayH)}</div><div style={{fontSize:10,color:"#065f46"}}>¥{fmtPay(sal.regularDayPay)}</div></>):<span style={{color:"#d1d5db",fontSize:11}}>—</span>}
@@ -2629,6 +2655,7 @@ ${pw.innerHTML}
             </div>
           );
         })}
+        </>}
 
         {/* ── SETTINGS ── */}
         {view==="settings"&&<>
