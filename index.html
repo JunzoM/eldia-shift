@@ -1257,6 +1257,7 @@ function ShiftApp() {
   const [salaryOptJoin,setSalaryOptJoin]=useState(true);   // 入社日前除外
   const [salaryOptDeduct,setSalaryOptDeduct]=useState(false); // 社保・所得税控除表示
   const [salaryOptPaid,setSalaryOptPaid]=useState(true);   // 有休を給与に含める
+  const [salaryShowDetail,setSalaryShowDetail]=useState(false); // 計算明細
   const [openStaffId,setOpenStaffId]=useState(null);
   const [staffSettingSection,setStaffSettingSection]=useState("patterns"); // "patterns" | "timeblocks"
   const [addingStaff,setAddingStaff]=useState(false);
@@ -1622,6 +1623,57 @@ function ShiftApp() {
       hourlyRate:rate,
     };
   }),[visibleStaff,cellData,globalTemplates,year,month,salaryOptJoin,salaryOptPaid]);
+
+  // 給与計算明細（日別・週別内訳）— salaryShowDetail ON時のみ算出
+  const salaryDetail=useMemo(()=>{
+    if(!salaryShowDetail) return null;
+    return visibleStaff.map(s=>{
+      const leaveDate=s.leaveDate?new Date(s.leaveDate):null;
+      const joinDate=salaryOptJoin&&s.joinDate?new Date(s.joinDate):null;
+      const wkMap={};
+      monthDates.forEach(d=>{
+        const wk=getMondayOf(d).toISOString().slice(0,10);
+        if(!wkMap[wk]) wkMap[wk]={days:[],rDH:0,rNH:0};
+        const w=wkMap[wk];
+        const excl=(leaveDate&&d>leaveDate)||(joinDate&&d<joinDate);
+        if(excl){w.days.push({date:d,type:'excl'});return;}
+        const eff=getEffective(s,d);
+        if(eff&&eff.isOff&&eff.blockId==='off2'&&salaryOptPaid){
+          const base=getBaseSchedule(s,d);
+          if(base&&!base.isOff&&base.inTime&&base.outTime){
+            const[ih,im]=base.inTime.split(':').map(Number);
+            const[oh,om]=base.outTime.split(':').map(Number);
+            const netH=calcNetH(ih,im,oh,om);
+            if(netH>0){w.days.push({date:d,type:'paid',inTime:base.inTime,outTime:base.outTime,netH});return;}
+          }
+          w.days.push({date:d,type:'off',label:'有休'});return;
+        }
+        if(!eff||eff.isOff||!eff.inTime||!eff.outTime){
+          w.days.push({date:d,type:'off',label:eff?OFF_BLOCKS.find(b=>b.id===eff.blockId)?.short||'休':'─'});return;
+        }
+        const[ih,im]=eff.inTime.split(':').map(Number);
+        const[oh,om]=eff.outTime.split(':').map(Number);
+        const grossH=calcH(ih,im,oh,om),netH=calcNetH(ih,im,oh,om);
+        if(netH<=0){w.days.push({date:d,type:'off',label:'─'});return;}
+        const gNH=calcNightH(ih,im,oh,om);
+        const nNH=+(gNH*(netH/grossH)).toFixed(4);
+        const dOTH=Math.max(0,netH-8),nR=netH>0?nNH/netH:0;
+        const dOTNH=dOTH*nR,dOTDH=dOTH*(1-nR);
+        const rDH=(netH-nNH)-dOTDH,rNH=nNH-dOTNH;
+        w.rDH+=rDH;w.rNH+=rNH;
+        w.days.push({date:d,type:'work',inTime:eff.inTime,outTime:eff.outTime,netH,nNH,rDH,rNH,dOTDH,dOTNH});
+      });
+      let wIdx=0;
+      const weeks=Object.entries(wkMap).map(([wk,w])=>{
+        wIdx++;
+        const tot=+(w.rDH+w.rNH).toFixed(2),exc=Math.max(0,tot-40);
+        const nr=tot>0?w.rNH/(w.rDH+w.rNH):0;
+        return{wk,no:wIdx,days:w.days,tot,exc:+exc.toFixed(2),
+          wOTDH:+(exc*(1-nr)).toFixed(2),wOTNH:+(exc*nr).toFixed(2)};
+      });
+      return{id:s.id,weeks};
+    });
+  },[salaryShowDetail,visibleStaff,cellData,globalTemplates,year,month,salaryOptJoin,salaryOptPaid]);
 
 // ─── ManualModal ──────────────────────────────────────────────────────────────
 function ManualModal({ onClose }) {
@@ -2675,6 +2727,7 @@ ${pw.innerHTML}
                 {tog("有休を含める",salaryOptPaid,setSalaryOptPaid,"所定時間×1.00")}
                 {tog("入社日前を除外",salaryOptJoin,setSalaryOptJoin,"")}
                 {tog("社保・所得税を表示",salaryOptDeduct,setSalaryOptDeduct,"（概算）")}
+                {tog("計算明細を表示",salaryShowDetail,setSalaryShowDetail,"日別内訳")}
               </div>
             );
           })()}
@@ -2730,7 +2783,8 @@ ${pw.innerHTML}
                   </tr></thead>
                   <tbody>
                     {rows.map(({s,ri,sal,hasRate,over60H,ot60Pay,grossPay,socialIns,incomeTax,netPay})=>(
-                      <tr key={s.id} style={{background:ri%2===0?"#fff":"#fafbff"}}>
+                      <React.Fragment key={s.id}>
+                      <tr style={{background:ri%2===0?"#fff":"#fafbff"}}>
                         <td style={{padding:"7px 10px",borderBottom:"1px solid #e2e8f0",fontWeight:600,color:"#0f2044"}}>
                           <span style={{color:"#94a3b8",fontSize:10,marginRight:5}}>{s.no}</span>{s.name}
                         </td>
@@ -2784,6 +2838,108 @@ ${pw.innerHTML}
                           </td>
                         </>}
                       </tr>
+                      {salaryShowDetail&&salaryDetail&&(()=>{
+                        const det=salaryDetail.find(x=>x.id===s.id);
+                        if(!det) return null;
+                        const DW=['日','月','火','水','木','金','土'];
+                        const f1=v=>v>0.005?v.toFixed(1):'—';
+                        const fD=d=>`${d.getMonth()+1}/${d.getDate()}`;
+                        const tS=x=>({padding:'2px 7px',borderBottom:'1px solid #f0f0f0',fontSize:10.5,...(x||{})});
+                        return(
+                          <tr>
+                            <td colSpan={99} style={{padding:'0 10px 12px 20px',background:'#f8faff',borderBottom:'2px solid #dde3ef'}}>
+                              <details open>
+                                <summary style={{cursor:'pointer',fontWeight:700,fontSize:11,color:'#475569',padding:'6px 2px 4px',listStyle:'none',userSelect:'none'}}>
+                                  📋 {s.name} — {year}年{month+1}月 計算明細
+                                  <span style={{fontWeight:400,fontSize:9.5,marginLeft:10,color:'#94a3b8'}}>法定内≦8h/日・40h/週 ／ 深夜22:00〜5:00 ／ 休憩按分控除後</span>
+                                </summary>
+                                <div style={{overflowX:'auto',marginTop:4}}>
+                                <table style={{borderCollapse:'collapse',fontSize:10.5,minWidth:600}}>
+                                  <thead>
+                                    <tr style={{background:'#f1f5f9'}}>
+                                      <th style={{padding:'4px 7px',borderBottom:'2px solid #dde3ef',textAlign:'left',fontWeight:700,fontSize:10,color:'#475569',whiteSpace:'nowrap'}}>日付</th>
+                                      <th style={{padding:'4px 7px',borderBottom:'2px solid #dde3ef',textAlign:'left',fontWeight:700,fontSize:10,color:'#475569',whiteSpace:'nowrap'}}>曜</th>
+                                      <th style={{padding:'4px 7px',borderBottom:'2px solid #dde3ef',textAlign:'left',fontWeight:700,fontSize:10,color:'#475569',whiteSpace:'nowrap'}}>シフト</th>
+                                      <th style={{padding:'4px 7px',borderBottom:'2px solid #dde3ef',textAlign:'right',fontWeight:700,fontSize:10,color:'#475569',whiteSpace:'nowrap'}}>実働h</th>
+                                      <th style={{padding:'4px 7px',borderBottom:'2px solid #dde3ef',textAlign:'right',fontWeight:700,fontSize:10,color:'#1d4ed8',whiteSpace:'nowrap'}}>深夜h<br/><span style={{fontWeight:400,fontSize:9}}>22-5時</span></th>
+                                      <th style={{padding:'4px 7px',borderBottom:'2px solid #dde3ef',textAlign:'right',fontWeight:700,fontSize:10,color:'#065f46',whiteSpace:'nowrap'}}>法定内(昼)<br/><span style={{fontWeight:400,fontSize:9}}>×1.0</span></th>
+                                      <th style={{padding:'4px 7px',borderBottom:'2px solid #dde3ef',textAlign:'right',fontWeight:700,fontSize:10,color:'#1d4ed8',whiteSpace:'nowrap'}}>法定内(深夜)<br/><span style={{fontWeight:400,fontSize:9}}>×1.25</span></th>
+                                      <th style={{padding:'4px 7px',borderBottom:'2px solid #dde3ef',textAlign:'right',fontWeight:700,fontSize:10,color:'#c2410c',whiteSpace:'nowrap'}}>日次OT(昼)<br/><span style={{fontWeight:400,fontSize:9}}>×1.25</span></th>
+                                      <th style={{padding:'4px 7px',borderBottom:'2px solid #dde3ef',textAlign:'right',fontWeight:700,fontSize:10,color:'#7e22ce',whiteSpace:'nowrap'}}>日次OT(深夜)<br/><span style={{fontWeight:400,fontSize:9}}>×1.5</span></th>
+                                      <th style={{padding:'4px 7px',borderBottom:'2px solid #dde3ef',textAlign:'left',fontWeight:700,fontSize:10,color:'#475569',whiteSpace:'nowrap'}}>備考</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {det.weeks.map(wk=>(
+                                      <React.Fragment key={wk.wk}>
+                                        {wk.days.map((dy,di)=>{
+                                          const dc=dy.date.getDay()===0?'#dc2626':dy.date.getDay()===6?'#2563eb':'#334155';
+                                          const bg=dy.type==='work'?(di%2===0?'#fff':'#f8faff'):'#fafafa';
+                                          if(dy.type==='excl') return(
+                                            <tr key={di} style={{background:'#fafafa'}}>
+                                              <td style={tS({color:'#94a3b8'})}>{fD(dy.date)}</td>
+                                              <td style={tS({color:dc})}>{DW[dy.date.getDay()]}</td>
+                                              <td colSpan={8} style={tS({color:'#94a3b8',fontStyle:'italic'})}>除外</td>
+                                            </tr>);
+                                          if(dy.type==='off') return(
+                                            <tr key={di} style={{background:'#fafafa'}}>
+                                              <td style={tS({color:'#94a3b8'})}>{fD(dy.date)}</td>
+                                              <td style={tS({color:dc})}>{DW[dy.date.getDay()]}</td>
+                                              <td colSpan={8} style={tS({color:'#94a3b8'})}>{dy.label}</td>
+                                            </tr>);
+                                          if(dy.type==='paid') return(
+                                            <tr key={di} style={{background:'#f0fdfa'}}>
+                                              <td style={tS()}>{fD(dy.date)}</td>
+                                              <td style={tS({color:dc})}>{DW[dy.date.getDay()]}</td>
+                                              <td style={tS()}>{dy.inTime}〜{dy.outTime}</td>
+                                              <td style={tS({textAlign:'right',color:'#0f766e'})}>{dy.netH.toFixed(1)}</td>
+                                              <td colSpan={5} style={tS({textAlign:'center',color:'#94a3b8'})}>—</td>
+                                              <td style={tS({color:'#0f766e',fontWeight:600})}>有休 ×1.0</td>
+                                            </tr>);
+                                          return(
+                                            <tr key={di} style={{background:bg}}>
+                                              <td style={tS()}>{fD(dy.date)}</td>
+                                              <td style={tS({color:dc})}>{DW[dy.date.getDay()]}</td>
+                                              <td style={tS({whiteSpace:'nowrap'})}>{dy.inTime}〜{dy.outTime}</td>
+                                              <td style={tS({textAlign:'right'})}>{dy.netH.toFixed(1)}</td>
+                                              <td style={tS({textAlign:'right',color:'#1d4ed8'})}>{f1(dy.nNH)}</td>
+                                              <td style={tS({textAlign:'right',color:'#065f46'})}>{f1(dy.rDH)}</td>
+                                              <td style={tS({textAlign:'right',color:'#1d4ed8'})}>{f1(dy.rNH)}</td>
+                                              <td style={tS({textAlign:'right',color:'#c2410c'})}>{f1(dy.dOTDH)}</td>
+                                              <td style={tS({textAlign:'right',color:'#7e22ce'})}>{f1(dy.dOTNH)}</td>
+                                              <td style={tS({color:'#94a3b8',fontSize:9.5})}>{dy.netH<=8?'法定内':`日次OT ${(dy.netH-8).toFixed(1)}h`}</td>
+                                            </tr>);
+                                        })}
+                                        <tr style={{background:'#dbeafe'}}>
+                                          <td colSpan={3} style={{padding:'3px 7px',fontWeight:700,color:'#1d4ed8',fontSize:10.5}}>第{wk.no}週計</td>
+                                          <td style={{padding:'3px 7px',fontWeight:700,color:'#1d4ed8',textAlign:'right',fontSize:10.5}}>{wk.tot}h</td>
+                                          <td style={{padding:'3px 7px'}}></td>
+                                          <td colSpan={4} style={{padding:'3px 7px',color:'#475569',fontSize:10,textAlign:'center'}}>通常計（日次OT除く）</td>
+                                          <td style={{padding:'3px 7px',fontWeight:700,color:wk.exc>0?'#dc2626':'#16a34a',fontSize:10}}>{wk.exc>0?`↑週次OT +${wk.exc}h`:'週40h以内 ✓'}</td>
+                                        </tr>
+                                        {wk.exc>0&&(
+                                          <tr style={{background:'#fee2e2'}}>
+                                            <td colSpan={3} style={{padding:'2px 7px',color:'#b91c1c',fontSize:9.5,fontStyle:'italic'}}>→ 週次OT調整</td>
+                                            <td style={{padding:'2px 7px'}}></td>
+                                            <td style={{padding:'2px 7px'}}></td>
+                                            <td style={{padding:'2px 7px',textAlign:'right',color:'#b91c1c',fontSize:9.5}}>{wk.wOTDH>0?`−${wk.wOTDH}h`:''}</td>
+                                            <td style={{padding:'2px 7px',textAlign:'right',color:'#b91c1c',fontSize:9.5}}>{wk.wOTNH>0?`−${wk.wOTNH}h`:''}</td>
+                                            <td style={{padding:'2px 7px',textAlign:'right',color:'#dc2626',fontWeight:700,fontSize:9.5}}>{wk.wOTDH>0?`+${wk.wOTDH}h`:''}</td>
+                                            <td style={{padding:'2px 7px',textAlign:'right',color:'#dc2626',fontWeight:700,fontSize:9.5}}>{wk.wOTNH>0?`+${wk.wOTNH}h`:''}</td>
+                                            <td style={{padding:'2px 7px',color:'#b91c1c',fontSize:9.5}}>法定→OT昇格</td>
+                                          </tr>
+                                        )}
+                                      </React.Fragment>
+                                    ))}
+                                  </tbody>
+                                </table>
+                                </div>
+                              </details>
+                            </td>
+                          </tr>
+                        );
+                      })()}
+                      </React.Fragment>
                     ))}
                     <tr style={{background:"#f8faff",fontWeight:700}}>
                       <td colSpan={fixedCols+(salaryOpt60?1:0)} style={{padding:"7px 10px",borderTop:"2px solid #dde3ef",color:"#0f2044",fontSize:12}}>部署合計</td>
