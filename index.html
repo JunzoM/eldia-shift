@@ -102,6 +102,23 @@ const withholdingTax = m => {
   if(a<=579167) return Math.round(a*0.18-12205);
   return Math.round(a*0.207-22055);
 };
+// 労基法第39条 有給付与日数計算（勤続月数→今期付与＋繰越付与）
+const calcPaidLeaveGrant = joinDate => {
+  if(!joinDate) return null;
+  const join=new Date(joinDate);
+  const today=new Date();
+  let months=(today.getFullYear()-join.getFullYear())*12+(today.getMonth()-join.getMonth());
+  if(today.getDate()<join.getDate()) months--;
+  if(months<6) return null;
+  const sch=[[6,10],[18,11],[30,12],[42,14],[54,16],[66,18]];
+  const all=[...sch];
+  for(let m=78;m<=months+12;m+=12) all.push([m,20]);
+  const done=all.filter(([m])=>m<=months);
+  if(!done.length) return null;
+  const curr=done[done.length-1][1];
+  const prev=done.length>=2?done[done.length-2][1]:0;
+  return{curr,prev,total:curr+prev};
+};
 const getDays  = (y,m) => new Date(y,m+1,0).getDate();
 const getDow   = (y,m,d) => new Date(y,m,d).getDay();
 const getMondayOf = date => {
@@ -1547,7 +1564,7 @@ function ShiftApp() {
     const leaveDate=s.leaveDate?new Date(s.leaveDate):null;
     const joinDate=salaryOptJoin&&s.joinDate?new Date(s.joinDate):null;
     let totalRegDayH=0,totalRegNightH=0,totalDailyOTDayH=0,totalDailyOTNightH=0;
-    let paidH=0;
+    let paidH=0,paidDays=0;
     const weekMap={};
     monthDates.forEach(d=>{
       if(leaveDate&&d>leaveDate) return;
@@ -1560,7 +1577,7 @@ function ShiftApp() {
           const [ih,im]=base.inTime.split(":").map(Number);
           const [oh,om]=base.outTime.split(":").map(Number);
           const netH=calcNetH(ih,im,oh,om);
-          if(netH>0) paidH+=netH;
+          if(netH>0){paidH+=netH;paidDays++;}
         }
         return;
       }
@@ -1617,7 +1634,7 @@ function ShiftApp() {
       regularDayH:fmt(finalRegDayH),regularNightH:fmt(finalRegNightH),
       otDayH:fmt(finalOTDayH),otNightH:fmt(finalOTNightH),
       regularDayPay,regularNightPay,otDayPay,otNightPay,
-      paidH:fmt(paidH),paidPay,
+      paidH:fmt(paidH),paidPay,paidDays,
       totalPay:regularDayPay+regularNightPay+otDayPay+otNightPay+paidPay,
       totalOTH:fmt(finalOTDayH+finalOTNightH),
       hourlyRate:rate,
@@ -2787,6 +2804,20 @@ ${pw.innerHTML}
                           onClick={()=>setDetailOpenIds(p=>({...p,[s.id]:!p[s.id]}))}>
                           <span style={{color:"#94a3b8",fontSize:10,marginRight:5}}>{s.no}</span>{s.name}
                           <span style={{marginLeft:6,fontSize:10,color:"#94a3b8"}}>{detailOpenIds[s.id]?"▼":"▶"}</span>
+                          {s.joinDate&&(()=>{
+                            const pl=calcPaidLeaveGrant(s.joinDate);
+                            return(
+                              <div style={{fontSize:9.5,marginTop:3,fontWeight:400,lineHeight:1.4}}>
+                                {pl
+                                  ?<span style={{color:"#0f766e"}}>
+                                    有給 <strong>{pl.total}日</strong>
+                                    <span style={{color:"#94a3b8",marginLeft:3}}>（今期{pl.curr}＋繰越{pl.prev}）</span>
+                                    {sal.paidDays>0&&<span style={{color:"#0f766e",marginLeft:4}}>今月{sal.paidDays}日使用</span>}
+                                  </span>
+                                  :<span style={{color:"#94a3b8"}}>有給: 未付与（入社6ヶ月未満）</span>}
+                              </div>
+                            );
+                          })()}
                         </td>
                         <td style={{padding:"4px 8px",borderBottom:"1px solid #e2e8f0",textAlign:"center"}}>
                           <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:2}}>
