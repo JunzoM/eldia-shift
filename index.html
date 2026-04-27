@@ -1257,7 +1257,7 @@ function ShiftApp() {
   const [salaryOptJoin,setSalaryOptJoin]=useState(true);   // 入社日前除外
   const [salaryOptDeduct,setSalaryOptDeduct]=useState(false); // 社保・所得税控除表示
   const [salaryOptPaid,setSalaryOptPaid]=useState(true);   // 有休を給与に含める
-  const [salaryShowDetail,setSalaryShowDetail]=useState(false); // 計算明細
+  const [detailOpenIds,setDetailOpenIds]=useState({}); // 計算明細の個別開閉
   const [openStaffId,setOpenStaffId]=useState(null);
   const [staffSettingSection,setStaffSettingSection]=useState("patterns"); // "patterns" | "timeblocks"
   const [addingStaff,setAddingStaff]=useState(false);
@@ -1624,9 +1624,8 @@ function ShiftApp() {
     };
   }),[visibleStaff,cellData,globalTemplates,year,month,salaryOptJoin,salaryOptPaid]);
 
-  // 給与計算明細（日別・週別内訳）— salaryShowDetail ON時のみ算出
+  // 給与計算明細（日別・週別内訳）— クリックで個別展開
   const salaryDetail=useMemo(()=>{
-    if(!salaryShowDetail) return null;
     return visibleStaff.map(s=>{
       const leaveDate=s.leaveDate?new Date(s.leaveDate):null;
       const joinDate=salaryOptJoin&&s.joinDate?new Date(s.joinDate):null;
@@ -1673,7 +1672,7 @@ function ShiftApp() {
       });
       return{id:s.id,weeks};
     });
-  },[salaryShowDetail,visibleStaff,cellData,globalTemplates,year,month,salaryOptJoin,salaryOptPaid]);
+  },[visibleStaff,cellData,globalTemplates,year,month,salaryOptJoin,salaryOptPaid]);
 
 // ─── ManualModal ──────────────────────────────────────────────────────────────
 function ManualModal({ onClose }) {
@@ -2727,7 +2726,6 @@ ${pw.innerHTML}
                 {tog("有休を含める",salaryOptPaid,setSalaryOptPaid,"所定時間×1.00")}
                 {tog("入社日前を除外",salaryOptJoin,setSalaryOptJoin,"")}
                 {tog("社保・所得税を表示",salaryOptDeduct,setSalaryOptDeduct,"（概算）")}
-                {tog("計算明細を表示",salaryShowDetail,setSalaryShowDetail,"日別内訳")}
               </div>
             );
           })()}
@@ -2785,8 +2783,10 @@ ${pw.innerHTML}
                     {rows.map(({s,ri,sal,hasRate,over60H,ot60Pay,grossPay,socialIns,incomeTax,netPay})=>(
                       <React.Fragment key={s.id}>
                       <tr style={{background:ri%2===0?"#fff":"#fafbff"}}>
-                        <td style={{padding:"7px 10px",borderBottom:"1px solid #e2e8f0",fontWeight:600,color:"#0f2044"}}>
+                        <td style={{padding:"7px 10px",borderBottom:"1px solid #e2e8f0",fontWeight:600,color:"#0f2044",cursor:"pointer",userSelect:"none"}}
+                          onClick={()=>setDetailOpenIds(p=>({...p,[s.id]:!p[s.id]}))}>
                           <span style={{color:"#94a3b8",fontSize:10,marginRight:5}}>{s.no}</span>{s.name}
+                          <span style={{marginLeft:6,fontSize:10,color:"#94a3b8"}}>{detailOpenIds[s.id]?"▼":"▶"}</span>
                         </td>
                         <td style={{padding:"4px 8px",borderBottom:"1px solid #e2e8f0",textAlign:"center"}}>
                           <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:2}}>
@@ -2850,7 +2850,7 @@ ${pw.innerHTML}
                           </td>
                         </>}
                       </tr>
-                      {salaryShowDetail&&salaryDetail&&(()=>{
+                      {detailOpenIds[s.id]&&salaryDetail&&(()=>{
                         const det=salaryDetail.find(x=>x.id===s.id);
                         if(!det) return null;
                         const DW=['日','月','火','水','木','金','土'];
