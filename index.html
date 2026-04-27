@@ -93,6 +93,15 @@ const calcNightH = (ih,im,oh,om) => {
   if(e>s) return ov(s,e,0,300)+ov(s,e,1320,1440); // 同日シフト
   return ov(s,1440,1320,1440)+ov(0,e,0,300);       // 日跨ぎシフト
 };
+// 源泉徴収税額（月額表・甲欄・扶養0人）概算 ※実際の税額表と誤差あり
+const withholdingTax = m => {
+  if(m<=88000) return 0;
+  const a=Math.max(0,m-68000); // 諸控除概算後
+  if(a<=162500) return Math.round(a*0.045);
+  if(a<=275000) return Math.round(a*0.09-2455);
+  if(a<=579167) return Math.round(a*0.18-12205);
+  return Math.round(a*0.207-22055);
+};
 const getDays  = (y,m) => new Date(y,m+1,0).getDate();
 const getDow   = (y,m,d) => new Date(y,m,d).getDay();
 const getMondayOf = date => {
@@ -1244,6 +1253,9 @@ function ShiftApp() {
   const [view,setView]=useState("grid");
   const [settingsTab,setSettingsTab]=useState("staff");
   const [bulkRate,setBulkRate]=useState(1079);
+  const [salaryOpt60,setSalaryOpt60]=useState(true);      // 月60h超割増（×1.75/×2.00）
+  const [salaryOptJoin,setSalaryOptJoin]=useState(true);   // 入社日前除外
+  const [salaryOptDeduct,setSalaryOptDeduct]=useState(false); // 社保・所得税控除表示
   const [openStaffId,setOpenStaffId]=useState(null);
   const [staffSettingSection,setStaffSettingSection]=useState("patterns"); // "patterns" | "timeblocks"
   const [addingStaff,setAddingStaff]=useState(false);
@@ -1490,10 +1502,12 @@ function ShiftApp() {
   const salary=useMemo(()=>visibleStaff.map(s=>{
     const rate=s.hourlyRate||0;
     const leaveDate=s.leaveDate?new Date(s.leaveDate):null;
+    const joinDate=salaryOptJoin&&s.joinDate?new Date(s.joinDate):null;
     let totalRegDayH=0,totalRegNightH=0,totalDailyOTDayH=0,totalDailyOTNightH=0;
     const weekMap={};
     monthDates.forEach(d=>{
       if(leaveDate&&d>leaveDate) return;
+      if(joinDate&&d<joinDate) return;
       const eff=getEffective(s,d);
       if(!eff||eff.isOff||!eff.inTime||!eff.outTime) return;
       const [ih,im]=eff.inTime.split(":").map(Number);
@@ -1548,9 +1562,10 @@ function ShiftApp() {
       otDayH:fmt(finalOTDayH),otNightH:fmt(finalOTNightH),
       regularDayPay,regularNightPay,otDayPay,otNightPay,
       totalPay:regularDayPay+regularNightPay+otDayPay+otNightPay,
+      totalOTH:fmt(finalOTDayH+finalOTNightH),
       hourlyRate:rate,
     };
-  }),[visibleStaff,cellData,globalTemplates,year,month]);
+  }),[visibleStaff,cellData,globalTemplates,year,month,salaryOptJoin]);
 
 // ─── ManualModal ──────────────────────────────────────────────────────────────
 function ManualModal({ onClose }) {
@@ -2582,6 +2597,30 @@ ${pw.innerHTML}
             </button>
             <span style={{fontSize:10,color:"#94a3b8"}}>※ 個別の時給は各行または設定タブから変更できます</span>
           </div>
+          {/* 計算オプション トグル */}
+          {(()=>{
+            const tog=(lbl,val,set,desc)=>(
+              <button onClick={()=>set(v=>!v)} style={{
+                display:"flex",alignItems:"center",gap:5,padding:"5px 10px",
+                background:val?"#0f2044":"#f1f5f9",
+                color:val?"#c9a84c":"#64748b",
+                border:`1px solid ${val?"#0f2044":"#dde3ef"}`,
+                borderRadius:8,fontSize:11,fontWeight:700,cursor:"pointer",
+                fontFamily:"'Noto Sans JP',sans-serif",whiteSpace:"nowrap",
+              }}>
+                <span style={{fontSize:13}}>{val?"✓":"○"}</span>{lbl}
+                {desc&&<span style={{fontSize:9,fontWeight:400,color:val?"#c9a84c":"#94a3b8"}}>{desc}</span>}
+              </button>
+            );
+            return(
+              <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:10,padding:"8px 12px",background:"#f8faff",border:"1px solid #dde3ef",borderRadius:12,alignItems:"center"}}>
+                <span style={{fontSize:11,fontWeight:700,color:"#475569",marginRight:4}}>計算オプション</span>
+                {tog("月60h超割増",salaryOpt60,setSalaryOpt60,"超過分×1.75/×2.00")}
+                {tog("入社日前を除外",salaryOptJoin,setSalaryOptJoin,"")}
+                {tog("社保・所得税を表示",salaryOptDeduct,setSalaryOptDeduct,"（概算）")}
+              </div>
+            );
+          })()}
           {staffByDept.map(dept=>{
           if(dept.members.length===0)return null;
           const dc=PALETTE[dept.colorIdx];
@@ -2592,24 +2631,47 @@ ${pw.innerHTML}
           return(
             <div key={dept.id} className="card" style={{borderTop:`3px solid ${dc.color}`,overflowX:"auto"}}>
               <div className="card-hdr" style={{background:dc.bg,color:dc.color}}>{dept.label} — {year}年 {month+1}月 給与見込</div>
-              <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
-                <thead>
-                  <tr>
-                    <th style={{background:"#f8faff",padding:"7px 10px",textAlign:"left",borderBottom:"2px solid #dde3ef",color:"#0f2044",fontWeight:700,minWidth:110}}>スタッフ</th>
-                    <th style={{background:"#f8faff",padding:"7px 8px",textAlign:"center",borderBottom:"2px solid #dde3ef",color:"#475569",fontWeight:600,fontSize:11}}>時給</th>
-                    <th style={{background:"#f0fdf4",padding:"7px 8px",textAlign:"center",borderBottom:"2px solid #dde3ef",color:"#065f46",fontWeight:700,whiteSpace:"nowrap"}}>通常（昼）<br/><span style={{fontWeight:400,fontSize:10}}>×1.00</span></th>
-                    <th style={{background:"#eff6ff",padding:"7px 8px",textAlign:"center",borderBottom:"2px solid #dde3ef",color:"#1d4ed8",fontWeight:700,whiteSpace:"nowrap"}}>通常（深夜）<br/><span style={{fontWeight:400,fontSize:10}}>×1.25</span></th>
-                    <th style={{background:"#fff7ed",padding:"7px 8px",textAlign:"center",borderBottom:"2px solid #dde3ef",color:"#c2410c",fontWeight:700,whiteSpace:"nowrap"}}>時間外（昼）<br/><span style={{fontWeight:400,fontSize:10}}>×1.25</span></th>
-                    <th style={{background:"#fdf4ff",padding:"7px 8px",textAlign:"center",borderBottom:"2px solid #dde3ef",color:"#7e22ce",fontWeight:700,whiteSpace:"nowrap"}}>時間外（深夜）<br/><span style={{fontWeight:400,fontSize:10}}>×1.50</span></th>
-                    <th style={{background:"#f8faff",padding:"7px 10px",textAlign:"right",borderBottom:"2px solid #dde3ef",color:"#0f2044",fontWeight:700}}>見込給与</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {dept.members.map((s,ri)=>{
-                    const sal=salary.find(x=>x.id===s.id);
-                    if(!sal) return null;
-                    const hasRate=sal.hourlyRate>0;
-                    return(
+              {(()=>{
+                // 行ごとの計算値を事前処理
+                const rows=dept.members.map((s,ri)=>{
+                  const sal=salary.find(x=>x.id===s.id);
+                  if(!sal) return null;
+                  const hasRate=sal.hourlyRate>0;
+                  const rate=sal.hourlyRate||0;
+                  const over60H=salaryOpt60&&hasRate?Math.max(0,sal.totalOTH-60):0;
+                  const ot60Pay=Math.round(over60H*rate*0.50);
+                  const grossPay=sal.totalPay+ot60Pay;
+                  const socialIns=salaryOptDeduct&&hasRate?Math.round(grossPay*0.1475):0;
+                  const incomeTax=salaryOptDeduct&&hasRate?withholdingTax(Math.max(0,grossPay-socialIns)):0;
+                  const netPay=grossPay-socialIns-incomeTax;
+                  return{s,ri,sal,hasRate,rate,over60H,ot60Pay,grossPay,socialIns,incomeTax,netPay};
+                }).filter(Boolean);
+                const dGross=rows.reduce((a,r)=>a+r.grossPay,0);
+                const dSocial=rows.reduce((a,r)=>a+r.socialIns,0);
+                const dIT=rows.reduce((a,r)=>a+r.incomeTax,0);
+                const dNet=rows.reduce((a,r)=>a+r.netPay,0);
+                const fixedCols=6;
+                const extraCols=(salaryOpt60?1:0)+(salaryOptDeduct?3:0);
+                const thS=(bg,c,extra={})=>({background:bg,padding:"7px 8px",textAlign:"center",borderBottom:"2px solid #dde3ef",color:c,fontWeight:700,whiteSpace:"nowrap",...extra});
+                return(
+                <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+                  <thead><tr>
+                    <th style={thS("#f8faff","#0f2044",{textAlign:"left",minWidth:110,padding:"7px 10px"})}>スタッフ</th>
+                    <th style={thS("#f8faff","#475569",{fontWeight:600,fontSize:11})}>時給</th>
+                    <th style={thS("#f0fdf4","#065f46")}>通常（昼）<br/><span style={{fontWeight:400,fontSize:10}}>×1.00</span></th>
+                    <th style={thS("#eff6ff","#1d4ed8")}>通常（深夜）<br/><span style={{fontWeight:400,fontSize:10}}>×1.25</span></th>
+                    <th style={thS("#fff7ed","#c2410c")}>時間外（昼）<br/><span style={{fontWeight:400,fontSize:10}}>×1.25</span></th>
+                    <th style={thS("#fdf4ff","#7e22ce")}>時間外（深夜）<br/><span style={{fontWeight:400,fontSize:10}}>×1.50</span></th>
+                    {salaryOpt60&&<th style={thS("#fef9c3","#854d0e")}>月60h超割増<br/><span style={{fontWeight:400,fontSize:10}}>×1.75/×2.00</span></th>}
+                    <th style={thS("#f8faff","#0f2044",{textAlign:"right",padding:"7px 10px"})}>{salaryOptDeduct?"総支給":"見込給与"}</th>
+                    {salaryOptDeduct&&<>
+                      <th style={thS("#fef2f2","#b91c1c")}>社保<br/><span style={{fontWeight:400,fontSize:10}}>概算14.75%</span></th>
+                      <th style={thS("#f0fdf4","#166534")}>所得税<br/><span style={{fontWeight:400,fontSize:10}}>甲欄概算</span></th>
+                      <th style={thS("#f8faff","#0f2044",{textAlign:"right",padding:"7px 10px"})}><strong>手取概算</strong></th>
+                    </>}
+                  </tr></thead>
+                  <tbody>
+                    {rows.map(({s,ri,sal,hasRate,over60H,ot60Pay,grossPay,socialIns,incomeTax,netPay})=>(
                       <tr key={s.id} style={{background:ri%2===0?"#fff":"#fafbff"}}>
                         <td style={{padding:"7px 10px",borderBottom:"1px solid #e2e8f0",fontWeight:600,color:"#0f2044"}}>
                           <span style={{color:"#94a3b8",fontSize:10,marginRight:5}}>{s.no}</span>{s.name}
@@ -2635,23 +2697,52 @@ ${pw.innerHTML}
                         <td style={{padding:"7px 8px",borderBottom:"1px solid #e2e8f0",textAlign:"center",background:"#fdf4ff"}}>
                           {hasRate?(<><div style={{fontFamily:"'DM Sans',sans-serif",fontWeight:700,color:"#7e22ce",fontSize:12}}>{fmtH(sal.otNightH)}</div><div style={{fontSize:10,color:"#7e22ce"}}>¥{fmtPay(sal.otNightPay)}</div></>):<span style={{color:"#d1d5db",fontSize:11}}>—</span>}
                         </td>
+                        {salaryOpt60&&(
+                          <td style={{padding:"7px 8px",borderBottom:"1px solid #e2e8f0",textAlign:"center",background:"#fef9c3"}}>
+                            {hasRate&&over60H>0?(<><div style={{fontFamily:"'DM Sans',sans-serif",fontWeight:700,color:"#854d0e",fontSize:12}}>{fmtH(+over60H.toFixed(1))}</div><div style={{fontSize:10,color:"#854d0e"}}>¥{fmtPay(ot60Pay)}</div></>):<span style={{color:"#d1d5db",fontSize:11}}>—</span>}
+                          </td>
+                        )}
                         <td style={{padding:"7px 10px",borderBottom:"1px solid #e2e8f0",textAlign:"right"}}>
                           {hasRate
-                            ?<span style={{background:"#0f2044",color:"#c9a84c",padding:"2px 10px",borderRadius:8,fontFamily:"'DM Sans',sans-serif",fontWeight:700,fontSize:13}}>¥{fmtPay(sal.totalPay)}</span>
-                            :<span style={{color:"#d1d5db",fontSize:11}}>—</span>
-                          }
+                            ?<span style={{background:"#0f2044",color:"#c9a84c",padding:"2px 10px",borderRadius:8,fontFamily:"'DM Sans',sans-serif",fontWeight:700,fontSize:13}}>¥{fmtPay(grossPay)}</span>
+                            :<span style={{color:"#d1d5db",fontSize:11}}>—</span>}
                         </td>
+                        {salaryOptDeduct&&<>
+                          <td style={{padding:"7px 8px",borderBottom:"1px solid #e2e8f0",textAlign:"center",background:"#fef2f2"}}>
+                            {hasRate?<span style={{fontFamily:"'DM Sans',sans-serif",fontWeight:700,color:"#b91c1c",fontSize:12}}>¥{fmtPay(socialIns)}</span>:<span style={{color:"#d1d5db",fontSize:11}}>—</span>}
+                          </td>
+                          <td style={{padding:"7px 8px",borderBottom:"1px solid #e2e8f0",textAlign:"center",background:"#f0fdf4"}}>
+                            {hasRate?<span style={{fontFamily:"'DM Sans',sans-serif",fontWeight:700,color:"#166534",fontSize:12}}>¥{fmtPay(incomeTax)}</span>:<span style={{color:"#d1d5db",fontSize:11}}>—</span>}
+                          </td>
+                          <td style={{padding:"7px 10px",borderBottom:"1px solid #e2e8f0",textAlign:"right"}}>
+                            {hasRate
+                              ?<span style={{background:"#1e40af",color:"#bfdbfe",padding:"2px 10px",borderRadius:8,fontFamily:"'DM Sans',sans-serif",fontWeight:700,fontSize:13}}>¥{fmtPay(netPay)}</span>
+                              :<span style={{color:"#d1d5db",fontSize:11}}>—</span>}
+                          </td>
+                        </>}
                       </tr>
-                    );
-                  })}
-                  <tr style={{background:"#f8faff",fontWeight:700}}>
-                    <td colSpan={6} style={{padding:"7px 10px",borderTop:"2px solid #dde3ef",color:"#0f2044",fontSize:12}}>部署合計</td>
-                    <td style={{padding:"7px 10px",borderTop:"2px solid #dde3ef",textAlign:"right"}}>
-                      <span style={{background:"#0f2044",color:"#c9a84c",padding:"2px 10px",borderRadius:8,fontFamily:"'DM Sans',sans-serif",fontWeight:700,fontSize:13}}>¥{fmtPay(deptTotal)}</span>
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
+                    ))}
+                    <tr style={{background:"#f8faff",fontWeight:700}}>
+                      <td colSpan={fixedCols+(salaryOpt60?1:0)} style={{padding:"7px 10px",borderTop:"2px solid #dde3ef",color:"#0f2044",fontSize:12}}>部署合計</td>
+                      <td style={{padding:"7px 10px",borderTop:"2px solid #dde3ef",textAlign:"right"}}>
+                        <span style={{background:"#0f2044",color:"#c9a84c",padding:"2px 10px",borderRadius:8,fontFamily:"'DM Sans',sans-serif",fontWeight:700,fontSize:13}}>¥{fmtPay(dGross)}</span>
+                      </td>
+                      {salaryOptDeduct&&<>
+                        <td style={{padding:"7px 10px",borderTop:"2px solid #dde3ef",textAlign:"center",background:"#fef2f2"}}>
+                          <span style={{fontFamily:"'DM Sans',sans-serif",fontWeight:700,color:"#b91c1c",fontSize:12}}>¥{fmtPay(dSocial)}</span>
+                        </td>
+                        <td style={{padding:"7px 10px",borderTop:"2px solid #dde3ef",textAlign:"center",background:"#f0fdf4"}}>
+                          <span style={{fontFamily:"'DM Sans',sans-serif",fontWeight:700,color:"#166534",fontSize:12}}>¥{fmtPay(dIT)}</span>
+                        </td>
+                        <td style={{padding:"7px 10px",borderTop:"2px solid #dde3ef",textAlign:"right"}}>
+                          <span style={{background:"#1e40af",color:"#bfdbfe",padding:"2px 10px",borderRadius:8,fontFamily:"'DM Sans',sans-serif",fontWeight:700,fontSize:13}}>¥{fmtPay(dNet)}</span>
+                        </td>
+                      </>}
+                    </tr>
+                  </tbody>
+                </table>
+                );
+              })()}
             </div>
           );
         })}
