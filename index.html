@@ -1270,6 +1270,7 @@ function ShiftApp() {
   const [dbStatus,setDbStatus]=useState("init"); // "init"|"loading"|"ok"|"offline"|"saving"
   const saveTimer = useRef(null);
   const [view,setView]=useState("grid");
+  const [summaryTab,setSummaryTab]=useState("attendance");
   const [settingsTab,setSettingsTab]=useState("staff");
   const [bulkRate,setBulkRate]=useState(1079);
   const [salaryOpt60,setSalaryOpt60]=useState(true);      // 月60h超割増（×1.75/×2.00）
@@ -2372,7 +2373,7 @@ ${pw.innerHTML}
           HOTEL ELDIA <span style={{color:"#c9a84c"}}>神戸店</span>
         </div>
         <div className="hdr-tabs" style={{display:"flex",gap:3}}>
-          {[["grid","シフト表"],["summary","集計"],["salary","給与"],["settings","設定"]].map(([v,l])=>(
+          {[["grid","シフト表"],["summary","集計"],["settings","設定"]].map(([v,l])=>(
             <button key={v} className={`tab${view===v?" on":""}`} onClick={()=>setView(v)}>{l}</button>
           ))}
         </div>
@@ -2654,7 +2655,12 @@ ${pw.innerHTML}
         </>}
 
         {/* ── SUMMARY ── */}
-        {view==="summary"&&staffByDept.map(dept=>{
+        {view==="summary"&&<>
+          <div className="sub-tabs">
+            <button className={`sub-tab${summaryTab==="attendance"?" on":""}`} onClick={()=>setSummaryTab("attendance")}>集計</button>
+            <button className={`sub-tab${summaryTab==="salary"?" on":""}`} onClick={()=>setSummaryTab("salary")}>給料</button>
+          </div>
+          {summaryTab==="attendance"&&staffByDept.map(dept=>{
           if(dept.members.length===0)return null;
           const dc=PALETTE[dept.colorIdx];
           return(
@@ -2702,9 +2708,7 @@ ${pw.innerHTML}
             </div>
           );
         })}
-
-        {/* ── SALARY ── */}
-        {view==="salary"&&<>
+          {summaryTab==="salary"&&<>
           {/* 一括時給設定バー */}
           <div style={{display:"flex",alignItems:"center",gap:8,padding:"10px 14px",background:"#f8faff",border:"1px solid #dde3ef",borderRadius:12,marginBottom:10,flexWrap:"wrap"}}>
             <span style={{fontSize:12,fontWeight:700,color:"#0f2044"}}>一括時給設定</span>
@@ -3034,6 +3038,7 @@ ${pw.innerHTML}
             </div>
           );
         })}
+          </>}
         </>}
 
         {/* ── SETTINGS ── */}
