@@ -1473,7 +1473,7 @@ function ShiftApp() {
   function addStaff(){
     if(!newStaff.name.trim())return;
     const maxNo=staff.filter(s=>s.deptId===newStaff.deptId).reduce((m,s)=>Math.max(m,s.no),0);
-    setStaff(p=>[...p,{id:nextId.current++,no:maxNo+1,name:newStaff.name.trim(),deptId:newStaff.deptId,active:true,joinDate:"",leaveDate:"",hourlyRate:1079,timeBlocks:[],patterns:[],activePatternId:null,periodPatterns:[]}]);
+    setStaff(p=>[...p,{id:nextId.current++,no:maxNo+1,name:newStaff.name.trim(),deptId:newStaff.deptId,active:true,joinDate:"",leaveDate:"",hourlyRate:1079,hasSocialIns:false,timeBlocks:[],patterns:[],activePatternId:null,periodPatterns:[]}]);
     setNewStaff({name:"",deptId:"front"});setAddingStaff(false);
   }
 
@@ -2751,7 +2751,7 @@ ${pw.innerHTML}
                   const over60H=salaryOpt60&&hasRate?Math.max(0,sal.totalOTH-60):0;
                   const ot60Pay=Math.round(over60H*rate*0.50);
                   const grossPay=sal.totalPay+ot60Pay;
-                  const socialIns=salaryOptDeduct&&hasRate?Math.round(grossPay*0.1475):0;
+                  const socialIns=salaryOptDeduct&&hasRate&&(s.hasSocialIns||false)?Math.round(grossPay*0.1475):0;
                   const incomeTax=salaryOptDeduct&&hasRate?withholdingTax(Math.max(0,grossPay-socialIns)):0;
                   const netPay=grossPay-socialIns-incomeTax;
                   return{s,ri,sal,hasRate,rate,over60H,ot60Pay,grossPay,socialIns,incomeTax,netPay};
@@ -2825,8 +2825,20 @@ ${pw.innerHTML}
                             :<span style={{color:"#d1d5db",fontSize:11}}>—</span>}
                         </td>
                         {salaryOptDeduct&&<>
-                          <td style={{padding:"7px 8px",borderBottom:"1px solid #e2e8f0",textAlign:"center",background:"#fef2f2"}}>
-                            {hasRate?<span style={{fontFamily:"'DM Sans',sans-serif",fontWeight:700,color:"#b91c1c",fontSize:12}}>¥{fmtPay(socialIns)}</span>:<span style={{color:"#d1d5db",fontSize:11}}>—</span>}
+                          <td style={{padding:"5px 8px",borderBottom:"1px solid #e2e8f0",textAlign:"center",background:"#fef2f2"}}>
+                            {hasRate?(
+                              <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:2}}>
+                                <label style={{display:"flex",alignItems:"center",gap:3,cursor:"pointer",fontSize:10,color:"#64748b"}}>
+                                  <input type="checkbox" checked={s.hasSocialIns||false}
+                                    onChange={e=>updateStaff(s.id,p=>({...p,hasSocialIns:e.target.checked}))}
+                                    style={{cursor:"pointer"}}/>
+                                  加入
+                                </label>
+                                {(s.hasSocialIns||false)&&socialIns>0
+                                  ?<span style={{fontFamily:"'DM Sans',sans-serif",fontWeight:700,color:"#b91c1c",fontSize:12}}>¥{fmtPay(socialIns)}</span>
+                                  :<span style={{color:"#d1d5db",fontSize:11}}>—</span>}
+                              </div>
+                            ):<span style={{color:"#d1d5db",fontSize:11}}>—</span>}
                           </td>
                           <td style={{padding:"7px 8px",borderBottom:"1px solid #e2e8f0",textAlign:"center",background:"#f0fdf4"}}>
                             {hasRate?<span style={{fontFamily:"'DM Sans',sans-serif",fontWeight:700,color:"#166534",fontSize:12}}>¥{fmtPay(incomeTax)}</span>:<span style={{color:"#d1d5db",fontSize:11}}>—</span>}
@@ -3051,6 +3063,16 @@ ${pw.innerHTML}
                                 <label style={{fontSize:10.5,color:"#64748b",fontWeight:600}}>退職日</label>
                                 <input type="date" value={s.leaveDate||""} onChange={e=>updateStaff(s.id,p=>({...p,leaveDate:e.target.value,active:!e.target.value}))}
                                   style={{...SEL,padding:"4px 8px",fontSize:12}}/>
+                              </div>
+                              <div style={{display:"flex",flexDirection:"column",gap:3}}>
+                                <label style={{fontSize:10.5,color:"#64748b",fontWeight:600}}>社会保険</label>
+                                <label style={{display:"flex",alignItems:"center",gap:5,cursor:"pointer",marginTop:2}}>
+                                  <input type="checkbox" checked={s.hasSocialIns||false}
+                                    onChange={e=>updateStaff(s.id,p=>({...p,hasSocialIns:e.target.checked}))}
+                                    style={{cursor:"pointer",width:14,height:14}}/>
+                                  <span style={{fontSize:12,color:"#334155"}}>社保加入</span>
+                                </label>
+                                <span style={{fontSize:9.5,color:"#94a3b8"}}>週20h以上・外国人は除く</span>
                               </div>
                               <div style={{display:"flex",flexDirection:"column",gap:3}}>
                                 <label style={{fontSize:10.5,color:"#64748b",fontWeight:600}}>在職</label>
