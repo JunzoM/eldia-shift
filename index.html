@@ -103,21 +103,23 @@ const withholdingTax = m => {
   return Math.round(a*0.207-22055);
 };
 // 労基法第39条 有給付与日数計算（勤続月数→今期付与＋繰越付与）
-const calcPaidLeaveGrant = joinDate => {
+const calcPaidLeaveGrant = (joinDate, weeklyDays, weeklyHours) => {
   if(!joinDate) return null;
   const join=new Date(joinDate);
   const today=new Date();
   let months=(today.getFullYear()-join.getFullYear())*12+(today.getMonth()-join.getMonth());
   if(today.getDate()<join.getDate()) months--;
   if(months<6) return null;
-  const sch=[[6,10],[18,11],[30,12],[42,14],[54,16],[66,18]];
-  const all=[...sch];
-  for(let m=78;m<=months+12;m+=12) all.push([m,20]);
-  const done=all.filter(([m])=>m<=months);
-  if(!done.length) return null;
-  const curr=done[done.length-1][1];
-  const prev=done.length>=2?done[done.length-2][1]:0;
-  return{curr,prev,total:curr+prev};
+  // 週30h未満 かつ 週4日以下 → 比例付与（労基法施行規則第24条の3）
+  const isHirei=weeklyDays!=null&&weeklyHours!=null&&weeklyHours<30&&weeklyDays>=1&&weeklyDays<=4;
+  const NORMAL=[10,11,12,14,16,18,20];
+  const HIREI={4:[7,8,9,10,12,13,15],3:[5,6,6,8,9,10,11],2:[3,4,4,5,6,6,7],1:[1,2,2,2,3,3,3]};
+  const getG=i=>{const j=Math.min(i,6);return isHirei?HIREI[Math.max(1,Math.min(4,weeklyDays))][j]:NORMAL[j];};
+  const gm=[6,18,30,42,54,66,78];
+  let done=0;for(const m of gm){if(months>=m)done++;}
+  if(!done) return null;
+  const curr=getG(done-1),prev=done>=2?getG(done-2):0;
+  return{curr,prev,total:curr+prev,isHirei,weeklyDays:isHirei?weeklyDays:null,weeklyHours:isHirei?+weeklyHours.toFixed(1):null};
 };
 const getDays  = (y,m) => new Date(y,m+1,0).getDate();
 const getDow   = (y,m,d) => new Date(y,m,d).getDay();
@@ -2805,13 +2807,37 @@ ${pw.innerHTML}
                           <span style={{color:"#94a3b8",fontSize:10,marginRight:5}}>{s.no}</span>{s.name}
                           <span style={{marginLeft:6,fontSize:10,color:"#94a3b8"}}>{detailOpenIds[s.id]?"▼":"▶"}</span>
                           {s.joinDate&&(()=>{
-                            const pl=calcPaidLeaveGrant(s.joinDate);
+                            // アクティブパターンから週所定労働日数・時間を算出
+                            const today=new Date();
+                            const todayStr=`${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`;
+                            let wPat=null,wBest=null;
+                            for(const p of (s.patterns||[])){
+                              const from=p.activeFrom||null;
+                              if(from&&from>todayStr) continue;
+                              if(!wPat){wPat=p;wBest=from;continue;}
+                              if(from===null&&wBest!==null) continue;
+                              if(from!==null&&wBest===null){wPat=p;wBest=from;continue;}
+                              if(from>wBest){wPat=p;wBest=from;}
+                            }
+                            if(!wPat&&s.activePatternId) wPat=(s.patterns||[]).find(p=>p.id===s.activePatternId)||wPat;
+                            let wDays=0,wHours=0;
+                            if(wPat){for(let d=0;d<7;d++){
+                              const bid=wPat.days[d];if(!bid) continue;
+                              const b=findBlock(bid,s.timeBlocks,globalTemplates);
+                              if(!b||b.inH===null||b.inH===undefined) continue;
+                              const nh=calcNetH(b.inH,b.inM||0,b.outH,b.outM||0);
+                              if(nh>0){wDays++;wHours+=nh;}
+                            }}
+                            const pl=calcPaidLeaveGrant(s.joinDate,wDays||null,wHours||null);
                             return(
                               <div style={{fontSize:9.5,marginTop:3,fontWeight:400,lineHeight:1.4}}>
                                 {pl
                                   ?<span style={{color:"#0f766e"}}>
                                     有給 <strong>{pl.total}日</strong>
                                     <span style={{color:"#94a3b8",marginLeft:3}}>（今期{pl.curr}＋繰越{pl.prev}）</span>
+                                    {pl.isHirei
+                                      ?<span style={{color:"#2563eb",marginLeft:4,fontSize:9}}>比例付与・週{pl.weeklyDays}日/{pl.weeklyHours}h</span>
+                                      :wDays>0&&<span style={{color:"#94a3b8",marginLeft:4,fontSize:9}}>週{wDays}日/{+wHours.toFixed(1)}h</span>}
                                     {sal.paidDays>0&&<span style={{color:"#0f766e",marginLeft:4}}>今月{sal.paidDays}日使用</span>}
                                   </span>
                                   :<span style={{color:"#94a3b8"}}>有給: 未付与（入社6ヶ月未満）</span>}
