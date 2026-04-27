@@ -93,6 +93,15 @@ const calcNightH = (ih,im,oh,om) => {
   if(e>s) return ov(s,e,0,300)+ov(s,e,1320,1440); // 同日シフト
   return ov(s,1440,1320,1440)+ov(0,e,0,300);       // 日跨ぎシフト
 };
+// 源泉徴収税額（月額表・甲欄・扶養0人）概算 ※実際の税額表と誤差あり
+const withholdingTax = m => {
+  if(m<=88000) return 0;
+  const a=Math.max(0,m-68000); // 諸控除概算後
+  if(a<=162500) return Math.round(a*0.045);
+  if(a<=275000) return Math.round(a*0.09-2455);
+  if(a<=579167) return Math.round(a*0.18-12205);
+  return Math.round(a*0.207-22055);
+};
 const getDays  = (y,m) => new Date(y,m+1,0).getDate();
 const getDow   = (y,m,d) => new Date(y,m,d).getDay();
 const getMondayOf = date => {
@@ -1244,6 +1253,11 @@ function ShiftApp() {
   const [view,setView]=useState("grid");
   const [settingsTab,setSettingsTab]=useState("staff");
   const [bulkRate,setBulkRate]=useState(1079);
+  const [salaryOpt60,setSalaryOpt60]=useState(true);      // 月60h超割増（×1.75/×2.00）
+  const [salaryOptJoin,setSalaryOptJoin]=useState(true);   // 入社日前除外
+  const [salaryOptDeduct,setSalaryOptDeduct]=useState(false); // 社保・所得税控除表示
+  const [salaryOptPaid,setSalaryOptPaid]=useState(true);   // 有休を給与に含める
+  const [salaryShowDetail,setSalaryShowDetail]=useState(false); // 計算明細
   const [openStaffId,setOpenStaffId]=useState(null);
   const [staffSettingSection,setStaffSettingSection]=useState("patterns"); // "patterns" | "timeblocks"
   const [addingStaff,setAddingStaff]=useState(false);
@@ -1346,6 +1360,47 @@ function ShiftApp() {
     if(!b) return null;
     if(b.inH===null) return {inTime:"",outTime:"",blockId:bid,isOff:true,auto:true,patLabel:pat.label};
     return {inTime:fmtT(b.inH,b.inM),outTime:fmtT(b.outH,b.outM),blockId:bid,isOff:false,auto:true,patLabel:pat.label};
+  }
+
+  // cellDataを無視して基本パターン（periodPatterns→weeklyPatterns）のみ参照
+  // 有休日の「所定シフト」を取得するために使用
+  function getBaseSchedule(s,dateObj){
+    const dStr=`${dateObj.getFullYear()}-${String(dateObj.getMonth()+1).padStart(2,"0")}-${String(dateObj.getDate()).padStart(2,"0")}`;
+    const periodPats=s.periodPatterns||[];
+    const matchPeriod=periodPats.find(pp=>{
+      if(!pp.startDate||!pp.endDate) return false;
+      return dStr>=pp.startDate&&dStr<=pp.endDate;
+    });
+    if(matchPeriod){
+      const bid=matchPeriod.days[dStr];
+      if(!bid) return null;
+      const b=findBlock(bid,s.timeBlocks,globalTemplates);
+      if(!b) return null;
+      if(b.inH===null) return {inTime:"",outTime:"",blockId:bid,isOff:true};
+      return {inTime:fmtT(b.inH,b.inM),outTime:fmtT(b.outH,b.outM),blockId:bid,isOff:false};
+    }
+    let pat=null,bestFrom=null;
+    for(const p of s.patterns){
+      const from=p.activeFrom||null;
+      if(from&&from>dStr) continue;
+      if(pat===null){pat=p;bestFrom=from;continue;}
+      if(from===null&&bestFrom!==null) continue;
+      if(from!==null&&bestFrom===null){pat=p;bestFrom=from;continue;}
+      if(from>bestFrom){pat=p;bestFrom=from;}
+    }
+    if(!pat||(!bestFrom&&s.patterns.filter(p=>!p.activeFrom).length>1)){
+      if(s.activePatternId){
+        const ap=s.patterns.find(p=>p.id===s.activePatternId);
+        if(ap&&(!ap.activeFrom||ap.activeFrom<=dStr)) pat=ap;
+      }
+    }
+    if(!pat) return null;
+    const bid=pat.days[dateObj.getDay()];
+    if(!bid) return null;
+    const b=findBlock(bid,s.timeBlocks,globalTemplates);
+    if(!b) return null;
+    if(b.inH===null) return {inTime:"",outTime:"",blockId:bid,isOff:true};
+    return {inTime:fmtT(b.inH,b.inM),outTime:fmtT(b.outH,b.outM),blockId:bid,isOff:false};
   }
 
   function clearCell(sid,dateObj){
@@ -1490,11 +1545,25 @@ function ShiftApp() {
   const salary=useMemo(()=>visibleStaff.map(s=>{
     const rate=s.hourlyRate||0;
     const leaveDate=s.leaveDate?new Date(s.leaveDate):null;
+    const joinDate=salaryOptJoin&&s.joinDate?new Date(s.joinDate):null;
     let totalRegDayH=0,totalRegNightH=0,totalDailyOTDayH=0,totalDailyOTNightH=0;
+    let paidH=0;
     const weekMap={};
     monthDates.forEach(d=>{
       if(leaveDate&&d>leaveDate) return;
+      if(joinDate&&d<joinDate) return;
       const eff=getEffective(s,d);
+      // 有休（off2）: 所定シフト時間分を ×1.00 で計上（深夜割増なし）
+      if(eff&&eff.isOff&&eff.blockId==="off2"&&salaryOptPaid){
+        const base=getBaseSchedule(s,d);
+        if(base&&!base.isOff&&base.inTime&&base.outTime){
+          const [ih,im]=base.inTime.split(":").map(Number);
+          const [oh,om]=base.outTime.split(":").map(Number);
+          const netH=calcNetH(ih,im,oh,om);
+          if(netH>0) paidH+=netH;
+        }
+        return;
+      }
       if(!eff||eff.isOff||!eff.inTime||!eff.outTime) return;
       const [ih,im]=eff.inTime.split(":").map(Number);
       const [oh,om]=eff.outTime.split(":").map(Number);
@@ -1542,15 +1611,69 @@ function ShiftApp() {
     const regularNightPay=Math.round(finalRegNightH*rate*1.25);
     const otDayPay      =Math.round(finalOTDayH  *rate*1.25);
     const otNightPay    =Math.round(finalOTNightH *rate*1.50);
+    const paidPay       =Math.round(paidH         *rate*1.00);
     return{
       id:s.id,
       regularDayH:fmt(finalRegDayH),regularNightH:fmt(finalRegNightH),
       otDayH:fmt(finalOTDayH),otNightH:fmt(finalOTNightH),
       regularDayPay,regularNightPay,otDayPay,otNightPay,
-      totalPay:regularDayPay+regularNightPay+otDayPay+otNightPay,
+      paidH:fmt(paidH),paidPay,
+      totalPay:regularDayPay+regularNightPay+otDayPay+otNightPay+paidPay,
+      totalOTH:fmt(finalOTDayH+finalOTNightH),
       hourlyRate:rate,
     };
-  }),[visibleStaff,cellData,globalTemplates,year,month]);
+  }),[visibleStaff,cellData,globalTemplates,year,month,salaryOptJoin,salaryOptPaid]);
+
+  // 給与計算明細（日別・週別内訳）— salaryShowDetail ON時のみ算出
+  const salaryDetail=useMemo(()=>{
+    if(!salaryShowDetail) return null;
+    return visibleStaff.map(s=>{
+      const leaveDate=s.leaveDate?new Date(s.leaveDate):null;
+      const joinDate=salaryOptJoin&&s.joinDate?new Date(s.joinDate):null;
+      const wkMap={};
+      monthDates.forEach(d=>{
+        const wk=getMondayOf(d).toISOString().slice(0,10);
+        if(!wkMap[wk]) wkMap[wk]={days:[],rDH:0,rNH:0};
+        const w=wkMap[wk];
+        const excl=(leaveDate&&d>leaveDate)||(joinDate&&d<joinDate);
+        if(excl){w.days.push({date:d,type:'excl'});return;}
+        const eff=getEffective(s,d);
+        if(eff&&eff.isOff&&eff.blockId==='off2'&&salaryOptPaid){
+          const base=getBaseSchedule(s,d);
+          if(base&&!base.isOff&&base.inTime&&base.outTime){
+            const[ih,im]=base.inTime.split(':').map(Number);
+            const[oh,om]=base.outTime.split(':').map(Number);
+            const netH=calcNetH(ih,im,oh,om);
+            if(netH>0){w.days.push({date:d,type:'paid',inTime:base.inTime,outTime:base.outTime,netH});return;}
+          }
+          w.days.push({date:d,type:'off',label:'有休'});return;
+        }
+        if(!eff||eff.isOff||!eff.inTime||!eff.outTime){
+          w.days.push({date:d,type:'off',label:eff?OFF_BLOCKS.find(b=>b.id===eff.blockId)?.short||'休':'─'});return;
+        }
+        const[ih,im]=eff.inTime.split(':').map(Number);
+        const[oh,om]=eff.outTime.split(':').map(Number);
+        const grossH=calcH(ih,im,oh,om),netH=calcNetH(ih,im,oh,om);
+        if(netH<=0){w.days.push({date:d,type:'off',label:'─'});return;}
+        const gNH=calcNightH(ih,im,oh,om);
+        const nNH=+(gNH*(netH/grossH)).toFixed(4);
+        const dOTH=Math.max(0,netH-8),nR=netH>0?nNH/netH:0;
+        const dOTNH=dOTH*nR,dOTDH=dOTH*(1-nR);
+        const rDH=(netH-nNH)-dOTDH,rNH=nNH-dOTNH;
+        w.rDH+=rDH;w.rNH+=rNH;
+        w.days.push({date:d,type:'work',inTime:eff.inTime,outTime:eff.outTime,netH,nNH,rDH,rNH,dOTDH,dOTNH});
+      });
+      let wIdx=0;
+      const weeks=Object.entries(wkMap).map(([wk,w])=>{
+        wIdx++;
+        const tot=+(w.rDH+w.rNH).toFixed(2),exc=Math.max(0,tot-40);
+        const nr=tot>0?w.rNH/(w.rDH+w.rNH):0;
+        return{wk,no:wIdx,days:w.days,tot,exc:+exc.toFixed(2),
+          wOTDH:+(exc*(1-nr)).toFixed(2),wOTNH:+(exc*nr).toFixed(2)};
+      });
+      return{id:s.id,weeks};
+    });
+  },[salaryShowDetail,visibleStaff,cellData,globalTemplates,year,month,salaryOptJoin,salaryOptPaid]);
 
 // ─── ManualModal ──────────────────────────────────────────────────────────────
 function ManualModal({ onClose }) {
@@ -2582,6 +2705,32 @@ ${pw.innerHTML}
             </button>
             <span style={{fontSize:10,color:"#94a3b8"}}>※ 個別の時給は各行または設定タブから変更できます</span>
           </div>
+          {/* 計算オプション トグル */}
+          {(()=>{
+            const tog=(lbl,val,set,desc)=>(
+              <button onClick={()=>set(v=>!v)} style={{
+                display:"flex",alignItems:"center",gap:5,padding:"5px 10px",
+                background:val?"#0f2044":"#f1f5f9",
+                color:val?"#c9a84c":"#64748b",
+                border:`1px solid ${val?"#0f2044":"#dde3ef"}`,
+                borderRadius:8,fontSize:11,fontWeight:700,cursor:"pointer",
+                fontFamily:"'Noto Sans JP',sans-serif",whiteSpace:"nowrap",
+              }}>
+                <span style={{fontSize:13}}>{val?"✓":"○"}</span>{lbl}
+                {desc&&<span style={{fontSize:9,fontWeight:400,color:val?"#c9a84c":"#94a3b8"}}>{desc}</span>}
+              </button>
+            );
+            return(
+              <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:10,padding:"8px 12px",background:"#f8faff",border:"1px solid #dde3ef",borderRadius:12,alignItems:"center"}}>
+                <span style={{fontSize:11,fontWeight:700,color:"#475569",marginRight:4}}>計算オプション</span>
+                {tog("月60h超割増",salaryOpt60,setSalaryOpt60,"超過分×1.75/×2.00")}
+                {tog("有休を含める",salaryOptPaid,setSalaryOptPaid,"所定時間×1.00")}
+                {tog("入社日前を除外",salaryOptJoin,setSalaryOptJoin,"")}
+                {tog("社保・所得税を表示",salaryOptDeduct,setSalaryOptDeduct,"（概算）")}
+                {tog("計算明細を表示",salaryShowDetail,setSalaryShowDetail,"日別内訳")}
+              </div>
+            );
+          })()}
           {staffByDept.map(dept=>{
           if(dept.members.length===0)return null;
           const dc=PALETTE[dept.colorIdx];
@@ -2592,25 +2741,50 @@ ${pw.innerHTML}
           return(
             <div key={dept.id} className="card" style={{borderTop:`3px solid ${dc.color}`,overflowX:"auto"}}>
               <div className="card-hdr" style={{background:dc.bg,color:dc.color}}>{dept.label} — {year}年 {month+1}月 給与見込</div>
-              <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
-                <thead>
-                  <tr>
-                    <th style={{background:"#f8faff",padding:"7px 10px",textAlign:"left",borderBottom:"2px solid #dde3ef",color:"#0f2044",fontWeight:700,minWidth:110}}>スタッフ</th>
-                    <th style={{background:"#f8faff",padding:"7px 8px",textAlign:"center",borderBottom:"2px solid #dde3ef",color:"#475569",fontWeight:600,fontSize:11}}>時給</th>
-                    <th style={{background:"#f0fdf4",padding:"7px 8px",textAlign:"center",borderBottom:"2px solid #dde3ef",color:"#065f46",fontWeight:700,whiteSpace:"nowrap"}}>通常（昼）<br/><span style={{fontWeight:400,fontSize:10}}>×1.00</span></th>
-                    <th style={{background:"#eff6ff",padding:"7px 8px",textAlign:"center",borderBottom:"2px solid #dde3ef",color:"#1d4ed8",fontWeight:700,whiteSpace:"nowrap"}}>通常（深夜）<br/><span style={{fontWeight:400,fontSize:10}}>×1.25</span></th>
-                    <th style={{background:"#fff7ed",padding:"7px 8px",textAlign:"center",borderBottom:"2px solid #dde3ef",color:"#c2410c",fontWeight:700,whiteSpace:"nowrap"}}>時間外（昼）<br/><span style={{fontWeight:400,fontSize:10}}>×1.25</span></th>
-                    <th style={{background:"#fdf4ff",padding:"7px 8px",textAlign:"center",borderBottom:"2px solid #dde3ef",color:"#7e22ce",fontWeight:700,whiteSpace:"nowrap"}}>時間外（深夜）<br/><span style={{fontWeight:400,fontSize:10}}>×1.50</span></th>
-                    <th style={{background:"#f8faff",padding:"7px 10px",textAlign:"right",borderBottom:"2px solid #dde3ef",color:"#0f2044",fontWeight:700}}>見込給与</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {dept.members.map((s,ri)=>{
-                    const sal=salary.find(x=>x.id===s.id);
-                    if(!sal) return null;
-                    const hasRate=sal.hourlyRate>0;
-                    return(
-                      <tr key={s.id} style={{background:ri%2===0?"#fff":"#fafbff"}}>
+              {(()=>{
+                // 行ごとの計算値を事前処理
+                const rows=dept.members.map((s,ri)=>{
+                  const sal=salary.find(x=>x.id===s.id);
+                  if(!sal) return null;
+                  const hasRate=sal.hourlyRate>0;
+                  const rate=sal.hourlyRate||0;
+                  const over60H=salaryOpt60&&hasRate?Math.max(0,sal.totalOTH-60):0;
+                  const ot60Pay=Math.round(over60H*rate*0.50);
+                  const grossPay=sal.totalPay+ot60Pay;
+                  const socialIns=salaryOptDeduct&&hasRate?Math.round(grossPay*0.1475):0;
+                  const incomeTax=salaryOptDeduct&&hasRate?withholdingTax(Math.max(0,grossPay-socialIns)):0;
+                  const netPay=grossPay-socialIns-incomeTax;
+                  return{s,ri,sal,hasRate,rate,over60H,ot60Pay,grossPay,socialIns,incomeTax,netPay};
+                }).filter(Boolean);
+                const dGross=rows.reduce((a,r)=>a+r.grossPay,0);
+                const dSocial=rows.reduce((a,r)=>a+r.socialIns,0);
+                const dIT=rows.reduce((a,r)=>a+r.incomeTax,0);
+                const dNet=rows.reduce((a,r)=>a+r.netPay,0);
+                const fixedCols=6+(salaryOptPaid?1:0);
+                const extraCols=(salaryOpt60?1:0)+(salaryOptDeduct?3:0);
+                const thS=(bg,c,extra={})=>({background:bg,padding:"7px 8px",textAlign:"center",borderBottom:"2px solid #dde3ef",color:c,fontWeight:700,whiteSpace:"nowrap",...extra});
+                return(
+                <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+                  <thead><tr>
+                    <th style={thS("#f8faff","#0f2044",{textAlign:"left",minWidth:110,padding:"7px 10px"})}>スタッフ</th>
+                    <th style={thS("#f8faff","#475569",{fontWeight:600,fontSize:11})}>時給</th>
+                    <th style={thS("#f0fdf4","#065f46")}>通常（昼）<br/><span style={{fontWeight:400,fontSize:10}}>×1.00</span></th>
+                    <th style={thS("#eff6ff","#1d4ed8")}>通常（深夜）<br/><span style={{fontWeight:400,fontSize:10}}>×1.25</span></th>
+                    <th style={thS("#fff7ed","#c2410c")}>時間外（昼）<br/><span style={{fontWeight:400,fontSize:10}}>×1.25</span></th>
+                    <th style={thS("#fdf4ff","#7e22ce")}>時間外（深夜）<br/><span style={{fontWeight:400,fontSize:10}}>×1.50</span></th>
+                    {salaryOptPaid&&<th style={thS("#f0fdfa","#0f766e")}>有休<br/><span style={{fontWeight:400,fontSize:10}}>×1.00</span></th>}
+                    {salaryOpt60&&<th style={thS("#fef9c3","#854d0e")}>月60h超割増<br/><span style={{fontWeight:400,fontSize:10}}>×1.75/×2.00</span></th>}
+                    <th style={thS("#f8faff","#0f2044",{textAlign:"right",padding:"7px 10px"})}>{salaryOptDeduct?"総支給":"見込給与"}</th>
+                    {salaryOptDeduct&&<>
+                      <th style={thS("#fef2f2","#b91c1c")}>社保<br/><span style={{fontWeight:400,fontSize:10}}>概算14.75%</span></th>
+                      <th style={thS("#f0fdf4","#166534")}>所得税<br/><span style={{fontWeight:400,fontSize:10}}>甲欄概算</span></th>
+                      <th style={thS("#f8faff","#0f2044",{textAlign:"right",padding:"7px 10px"})}><strong>手取概算</strong></th>
+                    </>}
+                  </tr></thead>
+                  <tbody>
+                    {rows.map(({s,ri,sal,hasRate,over60H,ot60Pay,grossPay,socialIns,incomeTax,netPay})=>(
+                      <React.Fragment key={s.id}>
+                      <tr style={{background:ri%2===0?"#fff":"#fafbff"}}>
                         <td style={{padding:"7px 10px",borderBottom:"1px solid #e2e8f0",fontWeight:600,color:"#0f2044"}}>
                           <span style={{color:"#94a3b8",fontSize:10,marginRight:5}}>{s.no}</span>{s.name}
                         </td>
@@ -2635,23 +2809,159 @@ ${pw.innerHTML}
                         <td style={{padding:"7px 8px",borderBottom:"1px solid #e2e8f0",textAlign:"center",background:"#fdf4ff"}}>
                           {hasRate?(<><div style={{fontFamily:"'DM Sans',sans-serif",fontWeight:700,color:"#7e22ce",fontSize:12}}>{fmtH(sal.otNightH)}</div><div style={{fontSize:10,color:"#7e22ce"}}>¥{fmtPay(sal.otNightPay)}</div></>):<span style={{color:"#d1d5db",fontSize:11}}>—</span>}
                         </td>
+                        {salaryOptPaid&&(
+                          <td style={{padding:"7px 8px",borderBottom:"1px solid #e2e8f0",textAlign:"center",background:"#f0fdfa"}}>
+                            {hasRate&&sal.paidH>0?(<><div style={{fontFamily:"'DM Sans',sans-serif",fontWeight:700,color:"#0f766e",fontSize:12}}>{fmtH(sal.paidH)}</div><div style={{fontSize:10,color:"#0f766e"}}>¥{fmtPay(sal.paidPay)}</div></>):<span style={{color:"#d1d5db",fontSize:11}}>—</span>}
+                          </td>
+                        )}
+                        {salaryOpt60&&(
+                          <td style={{padding:"7px 8px",borderBottom:"1px solid #e2e8f0",textAlign:"center",background:"#fef9c3"}}>
+                            {hasRate&&over60H>0?(<><div style={{fontFamily:"'DM Sans',sans-serif",fontWeight:700,color:"#854d0e",fontSize:12}}>{fmtH(+over60H.toFixed(1))}</div><div style={{fontSize:10,color:"#854d0e"}}>¥{fmtPay(ot60Pay)}</div></>):<span style={{color:"#d1d5db",fontSize:11}}>—</span>}
+                          </td>
+                        )}
                         <td style={{padding:"7px 10px",borderBottom:"1px solid #e2e8f0",textAlign:"right"}}>
                           {hasRate
-                            ?<span style={{background:"#0f2044",color:"#c9a84c",padding:"2px 10px",borderRadius:8,fontFamily:"'DM Sans',sans-serif",fontWeight:700,fontSize:13}}>¥{fmtPay(sal.totalPay)}</span>
-                            :<span style={{color:"#d1d5db",fontSize:11}}>—</span>
-                          }
+                            ?<span style={{background:"#0f2044",color:"#c9a84c",padding:"2px 10px",borderRadius:8,fontFamily:"'DM Sans',sans-serif",fontWeight:700,fontSize:13}}>¥{fmtPay(grossPay)}</span>
+                            :<span style={{color:"#d1d5db",fontSize:11}}>—</span>}
                         </td>
+                        {salaryOptDeduct&&<>
+                          <td style={{padding:"7px 8px",borderBottom:"1px solid #e2e8f0",textAlign:"center",background:"#fef2f2"}}>
+                            {hasRate?<span style={{fontFamily:"'DM Sans',sans-serif",fontWeight:700,color:"#b91c1c",fontSize:12}}>¥{fmtPay(socialIns)}</span>:<span style={{color:"#d1d5db",fontSize:11}}>—</span>}
+                          </td>
+                          <td style={{padding:"7px 8px",borderBottom:"1px solid #e2e8f0",textAlign:"center",background:"#f0fdf4"}}>
+                            {hasRate?<span style={{fontFamily:"'DM Sans',sans-serif",fontWeight:700,color:"#166534",fontSize:12}}>¥{fmtPay(incomeTax)}</span>:<span style={{color:"#d1d5db",fontSize:11}}>—</span>}
+                          </td>
+                          <td style={{padding:"7px 10px",borderBottom:"1px solid #e2e8f0",textAlign:"right"}}>
+                            {hasRate
+                              ?<span style={{background:"#1e40af",color:"#bfdbfe",padding:"2px 10px",borderRadius:8,fontFamily:"'DM Sans',sans-serif",fontWeight:700,fontSize:13}}>¥{fmtPay(netPay)}</span>
+                              :<span style={{color:"#d1d5db",fontSize:11}}>—</span>}
+                          </td>
+                        </>}
                       </tr>
-                    );
-                  })}
-                  <tr style={{background:"#f8faff",fontWeight:700}}>
-                    <td colSpan={6} style={{padding:"7px 10px",borderTop:"2px solid #dde3ef",color:"#0f2044",fontSize:12}}>部署合計</td>
-                    <td style={{padding:"7px 10px",borderTop:"2px solid #dde3ef",textAlign:"right"}}>
-                      <span style={{background:"#0f2044",color:"#c9a84c",padding:"2px 10px",borderRadius:8,fontFamily:"'DM Sans',sans-serif",fontWeight:700,fontSize:13}}>¥{fmtPay(deptTotal)}</span>
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
+                      {salaryShowDetail&&salaryDetail&&(()=>{
+                        const det=salaryDetail.find(x=>x.id===s.id);
+                        if(!det) return null;
+                        const DW=['日','月','火','水','木','金','土'];
+                        const f1=v=>v>0.005?v.toFixed(1):'—';
+                        const fD=d=>`${d.getMonth()+1}/${d.getDate()}`;
+                        const tS=x=>({padding:'2px 7px',borderBottom:'1px solid #f0f0f0',fontSize:10.5,...(x||{})});
+                        return(
+                          <tr>
+                            <td colSpan={99} style={{padding:'0 10px 12px 20px',background:'#f8faff',borderBottom:'2px solid #dde3ef'}}>
+                              <details open>
+                                <summary style={{cursor:'pointer',fontWeight:700,fontSize:11,color:'#475569',padding:'6px 2px 4px',listStyle:'none',userSelect:'none'}}>
+                                  📋 {s.name} — {year}年{month+1}月 計算明細
+                                  <span style={{fontWeight:400,fontSize:9.5,marginLeft:10,color:'#94a3b8'}}>法定内≦8h/日・40h/週 ／ 深夜22:00〜5:00 ／ 休憩按分控除後</span>
+                                </summary>
+                                <div style={{overflowX:'auto',marginTop:4}}>
+                                <table style={{borderCollapse:'collapse',fontSize:10.5,minWidth:600}}>
+                                  <thead>
+                                    <tr style={{background:'#f1f5f9'}}>
+                                      <th style={{padding:'4px 7px',borderBottom:'2px solid #dde3ef',textAlign:'left',fontWeight:700,fontSize:10,color:'#475569',whiteSpace:'nowrap'}}>日付</th>
+                                      <th style={{padding:'4px 7px',borderBottom:'2px solid #dde3ef',textAlign:'left',fontWeight:700,fontSize:10,color:'#475569',whiteSpace:'nowrap'}}>曜</th>
+                                      <th style={{padding:'4px 7px',borderBottom:'2px solid #dde3ef',textAlign:'left',fontWeight:700,fontSize:10,color:'#475569',whiteSpace:'nowrap'}}>シフト</th>
+                                      <th style={{padding:'4px 7px',borderBottom:'2px solid #dde3ef',textAlign:'right',fontWeight:700,fontSize:10,color:'#475569',whiteSpace:'nowrap'}}>実働h</th>
+                                      <th style={{padding:'4px 7px',borderBottom:'2px solid #dde3ef',textAlign:'right',fontWeight:700,fontSize:10,color:'#1d4ed8',whiteSpace:'nowrap'}}>深夜h<br/><span style={{fontWeight:400,fontSize:9}}>22-5時</span></th>
+                                      <th style={{padding:'4px 7px',borderBottom:'2px solid #dde3ef',textAlign:'right',fontWeight:700,fontSize:10,color:'#065f46',whiteSpace:'nowrap'}}>法定内(昼)<br/><span style={{fontWeight:400,fontSize:9}}>×1.0</span></th>
+                                      <th style={{padding:'4px 7px',borderBottom:'2px solid #dde3ef',textAlign:'right',fontWeight:700,fontSize:10,color:'#1d4ed8',whiteSpace:'nowrap'}}>法定内(深夜)<br/><span style={{fontWeight:400,fontSize:9}}>×1.25</span></th>
+                                      <th style={{padding:'4px 7px',borderBottom:'2px solid #dde3ef',textAlign:'right',fontWeight:700,fontSize:10,color:'#c2410c',whiteSpace:'nowrap'}}>日次OT(昼)<br/><span style={{fontWeight:400,fontSize:9}}>×1.25</span></th>
+                                      <th style={{padding:'4px 7px',borderBottom:'2px solid #dde3ef',textAlign:'right',fontWeight:700,fontSize:10,color:'#7e22ce',whiteSpace:'nowrap'}}>日次OT(深夜)<br/><span style={{fontWeight:400,fontSize:9}}>×1.5</span></th>
+                                      <th style={{padding:'4px 7px',borderBottom:'2px solid #dde3ef',textAlign:'left',fontWeight:700,fontSize:10,color:'#475569',whiteSpace:'nowrap'}}>備考</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {det.weeks.map(wk=>(
+                                      <React.Fragment key={wk.wk}>
+                                        {wk.days.map((dy,di)=>{
+                                          const dc=dy.date.getDay()===0?'#dc2626':dy.date.getDay()===6?'#2563eb':'#334155';
+                                          const bg=dy.type==='work'?(di%2===0?'#fff':'#f8faff'):'#fafafa';
+                                          if(dy.type==='excl') return(
+                                            <tr key={di} style={{background:'#fafafa'}}>
+                                              <td style={tS({color:'#94a3b8'})}>{fD(dy.date)}</td>
+                                              <td style={tS({color:dc})}>{DW[dy.date.getDay()]}</td>
+                                              <td colSpan={8} style={tS({color:'#94a3b8',fontStyle:'italic'})}>除外</td>
+                                            </tr>);
+                                          if(dy.type==='off') return(
+                                            <tr key={di} style={{background:'#fafafa'}}>
+                                              <td style={tS({color:'#94a3b8'})}>{fD(dy.date)}</td>
+                                              <td style={tS({color:dc})}>{DW[dy.date.getDay()]}</td>
+                                              <td colSpan={8} style={tS({color:'#94a3b8'})}>{dy.label}</td>
+                                            </tr>);
+                                          if(dy.type==='paid') return(
+                                            <tr key={di} style={{background:'#f0fdfa'}}>
+                                              <td style={tS()}>{fD(dy.date)}</td>
+                                              <td style={tS({color:dc})}>{DW[dy.date.getDay()]}</td>
+                                              <td style={tS()}>{dy.inTime}〜{dy.outTime}</td>
+                                              <td style={tS({textAlign:'right',color:'#0f766e'})}>{dy.netH.toFixed(1)}</td>
+                                              <td colSpan={5} style={tS({textAlign:'center',color:'#94a3b8'})}>—</td>
+                                              <td style={tS({color:'#0f766e',fontWeight:600})}>有休 ×1.0</td>
+                                            </tr>);
+                                          return(
+                                            <tr key={di} style={{background:bg}}>
+                                              <td style={tS()}>{fD(dy.date)}</td>
+                                              <td style={tS({color:dc})}>{DW[dy.date.getDay()]}</td>
+                                              <td style={tS({whiteSpace:'nowrap'})}>{dy.inTime}〜{dy.outTime}</td>
+                                              <td style={tS({textAlign:'right'})}>{dy.netH.toFixed(1)}</td>
+                                              <td style={tS({textAlign:'right',color:'#1d4ed8'})}>{f1(dy.nNH)}</td>
+                                              <td style={tS({textAlign:'right',color:'#065f46'})}>{f1(dy.rDH)}</td>
+                                              <td style={tS({textAlign:'right',color:'#1d4ed8'})}>{f1(dy.rNH)}</td>
+                                              <td style={tS({textAlign:'right',color:'#c2410c'})}>{f1(dy.dOTDH)}</td>
+                                              <td style={tS({textAlign:'right',color:'#7e22ce'})}>{f1(dy.dOTNH)}</td>
+                                              <td style={tS({color:'#94a3b8',fontSize:9.5})}>{dy.netH<=8?'法定内':`日次OT ${(dy.netH-8).toFixed(1)}h`}</td>
+                                            </tr>);
+                                        })}
+                                        <tr style={{background:'#dbeafe'}}>
+                                          <td colSpan={3} style={{padding:'3px 7px',fontWeight:700,color:'#1d4ed8',fontSize:10.5}}>第{wk.no}週計</td>
+                                          <td style={{padding:'3px 7px',fontWeight:700,color:'#1d4ed8',textAlign:'right',fontSize:10.5}}>{wk.tot}h</td>
+                                          <td style={{padding:'3px 7px'}}></td>
+                                          <td colSpan={4} style={{padding:'3px 7px',color:'#475569',fontSize:10,textAlign:'center'}}>通常計（日次OT除く）</td>
+                                          <td style={{padding:'3px 7px',fontWeight:700,color:wk.exc>0?'#dc2626':'#16a34a',fontSize:10}}>{wk.exc>0?`↑週次OT +${wk.exc}h`:'週40h以内 ✓'}</td>
+                                        </tr>
+                                        {wk.exc>0&&(
+                                          <tr style={{background:'#fee2e2'}}>
+                                            <td colSpan={3} style={{padding:'2px 7px',color:'#b91c1c',fontSize:9.5,fontStyle:'italic'}}>→ 週次OT調整</td>
+                                            <td style={{padding:'2px 7px'}}></td>
+                                            <td style={{padding:'2px 7px'}}></td>
+                                            <td style={{padding:'2px 7px',textAlign:'right',color:'#b91c1c',fontSize:9.5}}>{wk.wOTDH>0?`−${wk.wOTDH}h`:''}</td>
+                                            <td style={{padding:'2px 7px',textAlign:'right',color:'#b91c1c',fontSize:9.5}}>{wk.wOTNH>0?`−${wk.wOTNH}h`:''}</td>
+                                            <td style={{padding:'2px 7px',textAlign:'right',color:'#dc2626',fontWeight:700,fontSize:9.5}}>{wk.wOTDH>0?`+${wk.wOTDH}h`:''}</td>
+                                            <td style={{padding:'2px 7px',textAlign:'right',color:'#dc2626',fontWeight:700,fontSize:9.5}}>{wk.wOTNH>0?`+${wk.wOTNH}h`:''}</td>
+                                            <td style={{padding:'2px 7px',color:'#b91c1c',fontSize:9.5}}>法定→OT昇格</td>
+                                          </tr>
+                                        )}
+                                      </React.Fragment>
+                                    ))}
+                                  </tbody>
+                                </table>
+                                </div>
+                              </details>
+                            </td>
+                          </tr>
+                        );
+                      })()}
+                      </React.Fragment>
+                    ))}
+                    <tr style={{background:"#f8faff",fontWeight:700}}>
+                      <td colSpan={fixedCols+(salaryOpt60?1:0)} style={{padding:"7px 10px",borderTop:"2px solid #dde3ef",color:"#0f2044",fontSize:12}}>部署合計</td>
+                      <td style={{padding:"7px 10px",borderTop:"2px solid #dde3ef",textAlign:"right"}}>
+                        <span style={{background:"#0f2044",color:"#c9a84c",padding:"2px 10px",borderRadius:8,fontFamily:"'DM Sans',sans-serif",fontWeight:700,fontSize:13}}>¥{fmtPay(dGross)}</span>
+                      </td>
+                      {salaryOptDeduct&&<>
+                        <td style={{padding:"7px 10px",borderTop:"2px solid #dde3ef",textAlign:"center",background:"#fef2f2"}}>
+                          <span style={{fontFamily:"'DM Sans',sans-serif",fontWeight:700,color:"#b91c1c",fontSize:12}}>¥{fmtPay(dSocial)}</span>
+                        </td>
+                        <td style={{padding:"7px 10px",borderTop:"2px solid #dde3ef",textAlign:"center",background:"#f0fdf4"}}>
+                          <span style={{fontFamily:"'DM Sans',sans-serif",fontWeight:700,color:"#166534",fontSize:12}}>¥{fmtPay(dIT)}</span>
+                        </td>
+                        <td style={{padding:"7px 10px",borderTop:"2px solid #dde3ef",textAlign:"right"}}>
+                          <span style={{background:"#1e40af",color:"#bfdbfe",padding:"2px 10px",borderRadius:8,fontFamily:"'DM Sans',sans-serif",fontWeight:700,fontSize:13}}>¥{fmtPay(dNet)}</span>
+                        </td>
+                      </>}
+                    </tr>
+                  </tbody>
+                </table>
+                );
+              })()}
             </div>
           );
         })}
