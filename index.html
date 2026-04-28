@@ -94,6 +94,11 @@ const calcNightH = (ih,im,oh,om) => {
   return ov(s,1440,1320,1440)+ov(0,e,0,300);       // 日跨ぎシフト
 };
 // 源泉徴収税額（月額表・甲欄・扶養0人）概算 ※実際の税額表と誤差あり
+// 協会けんぽ 大阪支部 2024年度 保険料率（労働者負担分）
+const OSAKA_KENKO_RATE = 0.05145; // 健康保険 10.29%÷2（40歳未満）
+const OSAKA_KAIGO_RATE = 0.00800; // 介護保険 1.60%÷2（40〜64歳）
+const KOUNEN_RATE      = 0.09150; // 厚生年金 18.3%÷2
+const KOYO_RATE        = 0.00600; // 雇用保険 1.2%（一般事業 労働者負担0.6%）
 const withholdingTax = m => {
   if(m<=88000) return 0;
   const a=Math.max(0,m-68000); // 諸控除概算後
@@ -1493,7 +1498,7 @@ function ShiftApp() {
   function addStaff(){
     if(!newStaff.name.trim())return;
     const maxNo=staff.filter(s=>s.deptId===newStaff.deptId).reduce((m,s)=>Math.max(m,s.no),0);
-    setStaff(p=>[...p,{id:nextId.current++,no:maxNo+1,name:newStaff.name.trim(),deptId:newStaff.deptId,active:true,joinDate:"",leaveDate:"",hourlyRate:1079,hasSocialIns:false,timeBlocks:[],patterns:[],activePatternId:null,periodPatterns:[]}]);
+    setStaff(p=>[...p,{id:nextId.current++,no:maxNo+1,name:newStaff.name.trim(),deptId:newStaff.deptId,active:true,joinDate:"",leaveDate:"",hourlyRate:1079,hasSocialIns:false,hasKaigo:false,hasEmploymentIns:true,timeBlocks:[],patterns:[],activePatternId:null,periodPatterns:[]}]);
     setNewStaff({name:"",deptId:"front"});setAddingStaff(false);
   }
 
@@ -1516,13 +1521,15 @@ function ShiftApp() {
   }),[staff,showInactive,year,month]);
   const staffByDept=useMemo(()=>depts.map(d=>({...d,members:[...visibleStaff.filter(s=>s.deptId===d.id)].sort((a,b)=>a.no-b.no)})),[depts,visibleStaff]);
 
-  // Monthly summary
-  // 休憩控除: 実労6.5h以上の場合は1h引く
-  function calcNetH(ih,im,oh,om){
+  // 休憩控除: 4.5h〜6.5h未満→0.5h、6.5h以上→1h
+  function calcBreakH(ih,im,oh,om){
     const raw=calcH(ih,im,oh,om);
-    if (raw>=6.5) return +(raw-1).toFixed(1);   // 6.5h以上 → 1h控除
-    if (raw>=4.5) return +(raw-0.5).toFixed(1); // 4.5h〜6.5h未満 → 0.5h控除
-    return raw;                                  // 4.5h未満 → 控除なし
+    if(raw>=6.5) return 1;
+    if(raw>=4.5) return 0.5;
+    return 0;
+  }
+  function calcNetH(ih,im,oh,om){
+    return +(calcH(ih,im,oh,om)-calcBreakH(ih,im,oh,om)).toFixed(1);
   }
 
   const summary=useMemo(()=>staff.map(s=>{
@@ -1588,11 +1595,12 @@ function ShiftApp() {
       const [ih,im]=eff.inTime.split(":").map(Number);
       const [oh,om]=eff.outTime.split(":").map(Number);
       const grossH=calcH(ih,im,oh,om);
-      const netH=calcNetH(ih,im,oh,om);
+      const breakH=calcBreakH(ih,im,oh,om);
+      const netH=+(grossH-breakH).toFixed(4);
       if(netH<=0) return;
       const grossNightH=calcNightH(ih,im,oh,om);
-      // 休憩時間を夜/昼に比例配分してネット深夜時間を算出
-      const nightNetH=+(grossNightH*(netH/grossH)).toFixed(4);
+      // 休憩は深夜（高単価）から先に控除
+      const nightNetH=+Math.max(0,grossNightH-breakH).toFixed(4);
       const dayNetH=netH-nightNetH;
       // 日次時間外（>8h/日）
       const dailyOTH=Math.max(0,netH-8);
@@ -1672,10 +1680,10 @@ function ShiftApp() {
         }
         const[ih,im]=eff.inTime.split(':').map(Number);
         const[oh,om]=eff.outTime.split(':').map(Number);
-        const grossH=calcH(ih,im,oh,om),netH=calcNetH(ih,im,oh,om);
+        const grossH=calcH(ih,im,oh,om),breakH=calcBreakH(ih,im,oh,om),netH=+(grossH-breakH).toFixed(4);
         if(netH<=0){w.days.push({date:d,type:'off',label:'─'});return;}
         const gNH=calcNightH(ih,im,oh,om);
-        const nNH=+(gNH*(netH/grossH)).toFixed(4);
+        const nNH=+Math.max(0,gNH-breakH).toFixed(4);
         const dOTH=Math.max(0,netH-8),nR=netH>0?nNH/netH:0;
         const dOTNH=dOTH*nR,dOTDH=dOTH*(1-nR);
         const rDH=(netH-nNH)-dOTDH,rNH=nNH-dOTNH;
@@ -1753,7 +1761,7 @@ function ManualModal({ onClose }) {
       icon:"📊", title:"月次集計",
       items:[
         ["集計の確認", "ヘッダーの「集計」タブで月ごとの出勤日数・総時間を確認できます。"],
-        ["休憩控除", "実労4.5h〜6.5h未満は0.5h控除、6.5h以上は1h控除して表示されます。"],
+        ["休憩控除", "実労4.5h〜6.5h未満は30分、6.5h以上は1h。休憩は深夜（高単価）から優先控除します。"],
         ["表示月の切り替え", "ヘッダーの ‹ › ボタンで月を切り替えると集計も連動します。"],
       ]
     },
@@ -2772,10 +2780,15 @@ ${pw.innerHTML}
                   const over60H=salaryOpt60&&hasRate?Math.max(0,sal.totalOTH-60):0;
                   const ot60Pay=Math.round(over60H*rate*0.50);
                   const grossPay=sal.totalPay+ot60Pay;
-                  const socialIns=salaryOptDeduct&&hasRate&&(s.hasSocialIns||false)?Math.round(grossPay*0.1475):0;
+                  const insBase=salaryOptDeduct&&hasRate&&(s.hasSocialIns||false);
+                  const kenko =insBase?Math.round(grossPay*OSAKA_KENKO_RATE):0;
+                  const kaigo =insBase&&(s.hasKaigo||false)?Math.round(grossPay*OSAKA_KAIGO_RATE):0;
+                  const kounen=insBase?Math.round(grossPay*KOUNEN_RATE):0;
+                  const koyo  =salaryOptDeduct&&hasRate&&(s.hasEmploymentIns!==false)?Math.round(grossPay*KOYO_RATE):0;
+                  const socialIns=kenko+kaigo+kounen+koyo;
                   const incomeTax=salaryOptDeduct&&hasRate?withholdingTax(Math.max(0,grossPay-socialIns)):0;
                   const netPay=grossPay-socialIns-incomeTax;
-                  return{s,ri,sal,hasRate,rate,over60H,ot60Pay,grossPay,socialIns,incomeTax,netPay};
+                  return{s,ri,sal,hasRate,rate,over60H,ot60Pay,grossPay,kenko,kaigo,kounen,koyo,socialIns,incomeTax,netPay};
                 }).filter(Boolean);
                 const dGross=rows.reduce((a,r)=>a+r.grossPay,0);
                 const dSocial=rows.reduce((a,r)=>a+r.socialIns,0);
@@ -2797,13 +2810,13 @@ ${pw.innerHTML}
                     {salaryOpt60&&<th style={thS("#fef9c3","#854d0e")}>月60h超割増<br/><span style={{fontWeight:400,fontSize:10}}>×1.75/×2.00</span></th>}
                     <th style={thS("#f8faff","#0f2044",{textAlign:"right",padding:"7px 10px"})}>{salaryOptDeduct?"総支給":"見込給与"}</th>
                     {salaryOptDeduct&&<>
-                      <th style={thS("#fef2f2","#b91c1c")}>社保<br/><span style={{fontWeight:400,fontSize:10}}>概算14.75%</span></th>
+                      <th style={thS("#fef2f2","#b91c1c")}>社保控除<br/><span style={{fontWeight:400,fontSize:10}}>協会けんぽ大阪</span></th>
                       <th style={thS("#f0fdf4","#166534")}>所得税<br/><span style={{fontWeight:400,fontSize:10}}>甲欄概算</span></th>
                       <th style={thS("#f8faff","#0f2044",{textAlign:"right",padding:"7px 10px"})}><strong>手取概算</strong></th>
                     </>}
                   </tr></thead>
                   <tbody>
-                    {rows.map(({s,ri,sal,hasRate,over60H,ot60Pay,grossPay,socialIns,incomeTax,netPay})=>(
+                    {rows.map(({s,ri,sal,hasRate,over60H,ot60Pay,grossPay,kenko,kaigo,kounen,koyo,socialIns,incomeTax,netPay})=>(
                       <React.Fragment key={s.id}>
                       <tr style={{background:ri%2===0?"#fff":"#fafbff"}}>
                         <td style={{padding:"7px 10px",borderBottom:"1px solid #e2e8f0",fontWeight:600,color:"#0f2044",cursor:"pointer",userSelect:"none"}}
@@ -2888,16 +2901,36 @@ ${pw.innerHTML}
                         {salaryOptDeduct&&<>
                           <td style={{padding:"5px 8px",borderBottom:"1px solid #e2e8f0",textAlign:"center",background:"#fef2f2"}}>
                             {hasRate?(
-                              <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:2}}>
-                                <label style={{display:"flex",alignItems:"center",gap:3,cursor:"pointer",fontSize:10,color:"#64748b"}}>
-                                  <input type="checkbox" checked={s.hasSocialIns||false}
-                                    onChange={e=>updateStaff(s.id,p=>({...p,hasSocialIns:e.target.checked}))}
-                                    style={{cursor:"pointer"}}/>
-                                  加入
-                                </label>
-                                {(s.hasSocialIns||false)&&socialIns>0
-                                  ?<span style={{fontFamily:"'DM Sans',sans-serif",fontWeight:700,color:"#b91c1c",fontSize:12}}>¥{fmtPay(socialIns)}</span>
-                                  :<span style={{color:"#d1d5db",fontSize:11}}>—</span>}
+                              <div style={{display:"flex",flexDirection:"column",alignItems:"flex-start",gap:2}}>
+                                <div style={{display:"flex",gap:6,flexWrap:"wrap",justifyContent:"center",width:"100%"}}>
+                                  <label style={{display:"flex",alignItems:"center",gap:2,cursor:"pointer",fontSize:9.5,color:"#64748b"}}>
+                                    <input type="checkbox" checked={s.hasSocialIns||false}
+                                      onChange={e=>updateStaff(s.id,p=>({...p,hasSocialIns:e.target.checked}))}
+                                      style={{cursor:"pointer"}}/>
+                                    社保
+                                  </label>
+                                  {(s.hasSocialIns||false)&&<label style={{display:"flex",alignItems:"center",gap:2,cursor:"pointer",fontSize:9.5,color:"#64748b"}}>
+                                    <input type="checkbox" checked={s.hasKaigo||false}
+                                      onChange={e=>updateStaff(s.id,p=>({...p,hasKaigo:e.target.checked}))}
+                                      style={{cursor:"pointer"}}/>
+                                    介護
+                                  </label>}
+                                  <label style={{display:"flex",alignItems:"center",gap:2,cursor:"pointer",fontSize:9.5,color:"#64748b"}}>
+                                    <input type="checkbox" checked={s.hasEmploymentIns!==false}
+                                      onChange={e=>updateStaff(s.id,p=>({...p,hasEmploymentIns:e.target.checked}))}
+                                      style={{cursor:"pointer"}}/>
+                                    雇用
+                                  </label>
+                                </div>
+                                {socialIns>0?(
+                                  <div style={{fontSize:9,color:"#7f1d1d",lineHeight:1.6,width:"100%"}}>
+                                    {kenko>0&&<div>健保 ¥{fmtPay(kenko)}</div>}
+                                    {kaigo>0&&<div>介護 ¥{fmtPay(kaigo)}</div>}
+                                    {kounen>0&&<div>厚年 ¥{fmtPay(kounen)}</div>}
+                                    {koyo>0&&<div>雇用 ¥{fmtPay(koyo)}</div>}
+                                    <div style={{fontFamily:"'DM Sans',sans-serif",fontWeight:700,color:"#b91c1c",fontSize:11,borderTop:"1px solid #fca5a5",marginTop:1,paddingTop:1}}>計 ¥{fmtPay(socialIns)}</div>
+                                  </div>
+                                ):<span style={{color:"#d1d5db",fontSize:11}}>—</span>}
                               </div>
                             ):<span style={{color:"#d1d5db",fontSize:11}}>—</span>}
                           </td>
@@ -2924,7 +2957,7 @@ ${pw.innerHTML}
                               <details open>
                                 <summary style={{cursor:'pointer',fontWeight:700,fontSize:11,color:'#475569',padding:'6px 2px 4px',listStyle:'none',userSelect:'none'}}>
                                   📋 {s.name} — {year}年{month+1}月 計算明細
-                                  <span style={{fontWeight:400,fontSize:9.5,marginLeft:10,color:'#94a3b8'}}>法定内≦8h/日・40h/週 ／ 深夜22:00〜5:00 ／ 休憩按分控除後</span>
+                                  <span style={{fontWeight:400,fontSize:9.5,marginLeft:10,color:'#94a3b8'}}>法定内≦8h/日・40h/週 ／ 深夜22:00〜5:00 ／ 休憩は深夜優先控除</span>
                                 </summary>
                                 <div style={{overflowX:'auto',marginTop:4}}>
                                 <table style={{borderCollapse:'collapse',fontSize:10.5,minWidth:600}}>
@@ -3132,12 +3165,24 @@ ${pw.innerHTML}
                                   style={{...SEL,padding:"4px 8px",fontSize:12}}/>
                               </div>
                               <div style={{display:"flex",flexDirection:"column",gap:3}}>
-                                <label style={{fontSize:10.5,color:"#64748b",fontWeight:600}}>社会保険</label>
+                                <label style={{fontSize:10.5,color:"#64748b",fontWeight:600}}>社会保険 <span style={{fontWeight:400,fontSize:9,color:"#94a3b8"}}>(協会けんぽ大阪)</span></label>
                                 <label style={{display:"flex",alignItems:"center",gap:5,cursor:"pointer",marginTop:2}}>
                                   <input type="checkbox" checked={s.hasSocialIns||false}
                                     onChange={e=>updateStaff(s.id,p=>({...p,hasSocialIns:e.target.checked}))}
                                     style={{cursor:"pointer",width:14,height:14}}/>
-                                  <span style={{fontSize:12,color:"#334155"}}>社保加入</span>
+                                  <span style={{fontSize:12,color:"#334155"}}>健保＋厚年加入 <span style={{fontSize:10,color:"#64748b"}}>(5.145%+9.15%)</span></span>
+                                </label>
+                                {(s.hasSocialIns||false)&&<label style={{display:"flex",alignItems:"center",gap:5,cursor:"pointer",marginLeft:4}}>
+                                  <input type="checkbox" checked={s.hasKaigo||false}
+                                    onChange={e=>updateStaff(s.id,p=>({...p,hasKaigo:e.target.checked}))}
+                                    style={{cursor:"pointer",width:14,height:14}}/>
+                                  <span style={{fontSize:12,color:"#334155"}}>介護保険対象 <span style={{fontSize:10,color:"#64748b"}}>(0.8%・40〜64歳)</span></span>
+                                </label>}
+                                <label style={{display:"flex",alignItems:"center",gap:5,cursor:"pointer",marginTop:2}}>
+                                  <input type="checkbox" checked={s.hasEmploymentIns!==false}
+                                    onChange={e=>updateStaff(s.id,p=>({...p,hasEmploymentIns:e.target.checked}))}
+                                    style={{cursor:"pointer",width:14,height:14}}/>
+                                  <span style={{fontSize:12,color:"#334155"}}>雇用保険加入 <span style={{fontSize:10,color:"#64748b"}}>(0.6%・週20h以上)</span></span>
                                 </label>
                                 <span style={{fontSize:9.5,color:"#94a3b8"}}>週20h以上・外国人は除く</span>
                               </div>
