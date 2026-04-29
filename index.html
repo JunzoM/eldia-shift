@@ -1240,13 +1240,21 @@ function ShiftCell({ s, dateObj, globalTemplates, cellData, setCellData, getEffe
 
   const W=mode==="week"?80:52;
 
+  // 実労時間（週表示のみ表示）
+  const netH = (mode==="week"&&eff&&!eff.isOff&&eff.inTime&&eff.outTime)
+    ? (()=>{const[ih,im]=eff.inTime.split(":").map(Number);const[oh,om]=eff.outTime.split(":").map(Number);const g=calcH(ih,im,oh,om);const bk=g>=6.5?1:g>=4.5?.5:0;return +(g-bk).toFixed(1);})()
+    : null;
+
   return (
     <>
       <td
         onClick={(isAfterLeave||locked)?undefined:e=>{const r=e.currentTarget.getBoundingClientRect();setPP({bottom:r.bottom,left:r.left});}}
         style={{
           height:mode==="week"?58:52,textAlign:"center",cursor:(isAfterLeave||locked)?"default":"pointer",padding:2,
-          background:bg,outline:tod&&!isAfterLeave?"2px solid #c9a84c":"none",outlineOffset:"-2px",
+          background: tod&&!isAfterLeave
+            ? (eff?.isOff ? bc?.bg : isSun ? "#fff3e0" : isSat ? "#f5f0e0" : "#fffbea")
+            : bg,
+          outline:tod&&!isAfterLeave?"2px solid #c9a84c":"none",outlineOffset:"-2px",
           verticalAlign:"middle",border:"1px solid #e2e8f0",position:"relative",userSelect:"none",
           minWidth:W,width:W,
           opacity:isAfterLeave?0.35:1,
@@ -1264,6 +1272,7 @@ function ShiftCell({ s, dateObj, globalTemplates, cellData, setCellData, getEffe
           <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:0,lineHeight:1.45}}>
             <span style={{fontSize:9.5,fontWeight:700,color:"#0f766e",fontFamily:"'DM Sans',sans-serif"}}>{eff.inTime||"—"}</span>
             <span style={{fontSize:9.5,fontWeight:700,color:"#dc2626",fontFamily:"'DM Sans',sans-serif"}}>{eff.outTime||"—"}</span>
+            {netH!==null&&<span style={{fontSize:8,color:"#64748b",fontFamily:"'DM Sans',sans-serif",fontWeight:600,marginTop:1}}>{netH}h</span>}
           </div>
         ):(
           <span style={{color:"#e2e8f0",fontSize:16}}>+</span>
@@ -2950,10 +2959,11 @@ ${pw.innerHTML}
                   <tbody>
                     {rows.map(({s,ri,sal,hasRate,over60H,ot60Pay,grossPay,kenko,kaigo,kounen,koyo,socialIns,incomeTax,netPay})=>(
                       <React.Fragment key={s.id}>
-                      <tr style={{background:ri%2===0?"#fff":"#fafbff"}}>
+                      <tr style={{background:ri%2===0?"#fff":"#fafbff",borderLeft:sal.totalOTH>0?"3px solid #f97316":"3px solid transparent"}}>
                         <td style={{padding:"7px 10px",borderBottom:"1px solid #e2e8f0",fontWeight:600,color:"#0f2044",cursor:"pointer",userSelect:"none"}}
                           onClick={()=>setDetailOpenIds(p=>({...p,[s.id]:!p[s.id]}))}>
                           <span style={{color:"#94a3b8",fontSize:10,marginRight:5}}>{s.no}</span>{s.name}
+                          {sal.totalOTH>0&&<span style={{marginLeft:7,fontSize:9.5,fontWeight:700,color:"#c2410c",background:"#fff7ed",border:"1px solid #fed7aa",padding:"1px 5px",borderRadius:4}}>OT {sal.totalOTH}h</span>}
                           <span style={{marginLeft:6,fontSize:10,color:"#94a3b8"}}>{detailOpenIds[s.id]?"▼":"▶"}</span>
                           {s.joinDate&&(()=>{
                             // アクティブパターンから週所定労働日数・時間を算出
