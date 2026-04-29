@@ -90,6 +90,17 @@ const PALETTE = [
 const uid    = () => Math.random().toString(36).slice(2,8);
 const fmtT   = (h,m) => `${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}`;
 const fmtTP  = (h,m) => `${h}:${String(m).padStart(2,"0")}`;  // 印刷用: 先頭ゼロなし
+// 日付文字列を YYYY-MM-DD に正規化（YYYY/MM/DD・YYYYMMDD も受け付ける）
+const normalizeDate = v => {
+  if(!v) return "";
+  const s = v.replace(/\//g,"-").replace(/\./g,"-").trim();
+  if(/^\d{8}$/.test(s)) return `${s.slice(0,4)}-${s.slice(4,6)}-${s.slice(6,8)}`;
+  if(/^\d{4}-\d{1,2}-\d{1,2}$/.test(s)){
+    const [y,m,d]=s.split("-");
+    return `${y}-${m.padStart(2,"0")}-${d.padStart(2,"0")}`;
+  }
+  return s;
+};
 const calcH  = (ih,im,oh,om) => { if(ih==null)return 0; let d=(oh*60+om)-(ih*60+im); if(d<=0)d+=1440; return +(d/60).toFixed(1); };
 // 深夜時間帯 22:00-5:00 との重複時間（時間単位）を返す
 const calcNightH = (ih,im,oh,om) => {
@@ -523,8 +534,10 @@ function PatternEditor({ initial, s, globalTemplates, onSave, onCancel }) {
             適用開始日
             <span style={{fontSize:10,color:"#94a3b8",fontWeight:400,marginLeft:4}}>（空白=デフォルト）</span>
           </label>
-          <input type="date" value={form.activeFrom||""} onChange={e=>f("activeFrom",e.target.value)}
-            style={{border:"1.5px solid #dde3ef",borderRadius:6,padding:"5px 8px",fontSize:12,outline:"none",background:"#f8faff",...(form.activeFrom?{borderColor:"#c9a84c"}:{})}}/>
+          <input type="text" value={form.activeFrom||""} onChange={e=>f("activeFrom",e.target.value)}
+            onBlur={e=>f("activeFrom",normalizeDate(e.target.value))}
+            placeholder="例: 2024-04-01"
+            style={{border:"1.5px solid #dde3ef",borderRadius:6,padding:"5px 8px",fontSize:12,outline:"none",background:"#f8faff",width:120,...(form.activeFrom?{borderColor:"#c9a84c"}:{})}}/>
         </div>
         <div style={{display:"flex",flexDirection:"column",gap:4}}>
           <label style={{fontSize:11,color:"#64748b",fontWeight:600}}>カラー</label>
@@ -752,11 +765,15 @@ function PeriodPatternPanel({ s, globalTemplates, onUpdate }) {
             <div style={{display:"flex",flexDirection:"column",gap:4}}>
               <label style={{fontSize:11,color:"#64748b",fontWeight:600}}>期間</label>
               <div style={{display:"flex",alignItems:"center",gap:6}}>
-                <input type="date" value={form.startDate} onChange={e=>f("startDate",e.target.value)}
-                  style={{...SEL,padding:"5px 8px",fontSize:12}}/>
+                <input type="text" value={form.startDate} onChange={e=>f("startDate",e.target.value)}
+                  onBlur={e=>f("startDate",normalizeDate(e.target.value))}
+                  placeholder="YYYY-MM-DD"
+                  style={{...SEL,padding:"5px 8px",fontSize:12,width:110}}/>
                 <span style={{color:"#94a3b8",fontSize:12}}>〜</span>
-                <input type="date" value={form.endDate} onChange={e=>f("endDate",e.target.value)}
-                  style={{...SEL,padding:"5px 8px",fontSize:12}}/>
+                <input type="text" value={form.endDate} onChange={e=>f("endDate",e.target.value)}
+                  onBlur={e=>f("endDate",normalizeDate(e.target.value))}
+                  placeholder="YYYY-MM-DD"
+                  style={{...SEL,padding:"5px 8px",fontSize:12,width:110}}/>
               </div>
             </div>
             <div style={{display:"flex",flexDirection:"column",gap:4}}>
@@ -3193,13 +3210,17 @@ ${pw.innerHTML}
                               </div>
                               <div style={{display:"flex",flexDirection:"column",gap:3}}>
                                 <label style={{fontSize:10.5,color:"#64748b",fontWeight:600}}>入社日</label>
-                                <input type="date" value={s.joinDate||""} onChange={e=>updateStaff(s.id,p=>({...p,joinDate:e.target.value}))}
-                                  style={{...SEL,padding:"4px 8px",fontSize:12}}/>
+                                <input type="text" value={s.joinDate||""} onChange={e=>updateStaff(s.id,p=>({...p,joinDate:e.target.value}))}
+                                  onBlur={e=>{const v=normalizeDate(e.target.value);updateStaff(s.id,p=>({...p,joinDate:v}));}}
+                                  placeholder="YYYY-MM-DD"
+                                  style={{...SEL,padding:"4px 8px",fontSize:12,width:110}}/>
                               </div>
                               <div style={{display:"flex",flexDirection:"column",gap:3}}>
                                 <label style={{fontSize:10.5,color:"#64748b",fontWeight:600}}>退職日</label>
-                                <input type="date" value={s.leaveDate||""} onChange={e=>updateStaff(s.id,p=>({...p,leaveDate:e.target.value,active:!e.target.value}))}
-                                  style={{...SEL,padding:"4px 8px",fontSize:12}}/>
+                                <input type="text" value={s.leaveDate||""} onChange={e=>updateStaff(s.id,p=>({...p,leaveDate:e.target.value,active:!e.target.value}))}
+                                  onBlur={e=>{const v=normalizeDate(e.target.value);updateStaff(s.id,p=>({...p,leaveDate:v,active:!v}));}}
+                                  placeholder="YYYY-MM-DD"
+                                  style={{...SEL,padding:"4px 8px",fontSize:12,width:110}}/>
                               </div>
                               <div style={{display:"flex",flexDirection:"column",gap:3}}>
                                 <label style={{fontSize:10.5,color:"#64748b",fontWeight:600}}>社会保険 <span style={{fontWeight:400,fontSize:9,color:"#94a3b8"}}>(協会けんぽ大阪)</span></label>
