@@ -2684,7 +2684,7 @@ ${pw.innerHTML}
                     <th style={{background:"#f8faff",color:"#0f2044",padding:"8px 12px",fontWeight:700,textAlign:"left",borderBottom:"2px solid #dde3ef",minWidth:140}}>スタッフ</th>
                     <th style={{background:"#f8faff",padding:"8px 10px",fontWeight:700,textAlign:"center",borderBottom:"2px solid #dde3ef",color:"#0f2044"}}>出勤日数</th>
                     <th style={{background:"#f8faff",padding:"8px 10px",fontWeight:700,textAlign:"center",borderBottom:"2px solid #dde3ef",color:"#0f2044"}}>総時間</th>
-                    <th style={{background:"#f0fdfa",padding:"8px 10px",fontWeight:700,textAlign:"center",borderBottom:"2px solid #dde3ef",color:"#0f766e",fontSize:12}}>有休残<br/><span style={{fontWeight:400,fontSize:10,color:"#64748b"}}>今期＋繰越</span></th>
+                    <th style={{background:"#f0fdfa",padding:"8px 10px",fontWeight:700,textAlign:"center",borderBottom:"2px solid #dde3ef",color:"#0f766e",fontSize:12}}>有休残</th>
                     <th style={{background:"#f8faff",padding:"8px 10px",fontWeight:600,textAlign:"left",borderBottom:"2px solid #dde3ef",color:"#64748b",fontSize:11}}>個人テンプレート</th>
                   </tr>
                 </thead>
@@ -2714,8 +2714,33 @@ ${pw.innerHTML}
                         if(nh>0){wDays++;wHours+=nh;}
                       }}
                       const pl=calcPaidLeaveGrant(s.joinDate,wDays||null,wHours||null);
+                      if(!pl) return null;
+                      // 今期付与開始日を算出（最後に付与が発生した月数しきい値の日）
+                      const join=new Date(s.joinDate);
+                      const today=new Date();
+                      let mons=(today.getFullYear()-join.getFullYear())*12+(today.getMonth()-join.getMonth());
+                      if(today.getDate()<join.getDate()) mons--;
+                      const gm=[6,18,30,42,54,66,78];
+                      let done=0;for(const m of gm){if(mons>=m)done++;}
+                      const threshMons=done>=1?gm[done-1]:6;
+                      const fromDate=new Date(join);
+                      fromDate.setMonth(fromDate.getMonth()+threshMons);
+                      const fromStr=fromDate.toISOString().slice(0,10);
+                      // 選択月の末日までを集計範囲とする
+                      const lastDay=getDays(year,month-1);
+                      const toStr=`${year}-${String(month).padStart(2,'0')}-${String(lastDay).padStart(2,'0')}`;
+                      // cellDataからoff2の付与期間内累積使用数を集計
+                      const prefix=`${s.id}|`;
+                      let totalUsed=0;
+                      for(const [k,v] of Object.entries(cellData)){
+                        if(!k.startsWith(prefix)) continue;
+                        const dateStr=k.slice(prefix.length);
+                        if(dateStr<fromStr||dateStr>toStr) continue;
+                        if(v&&v.blockId==='off2') totalUsed++;
+                      }
                       const sal=salary.find(x=>x.id===s.id);
-                      return {pl,paidDays:sal?.paidDays||0};
+                      const paidDays=sal?.paidDays||0;
+                      return {pl,paidDays,totalUsed,remaining:Math.max(0,pl.total-totalUsed)};
                     })();
                     return(
                       <tr key={s.id} style={{background:ri%2===0?"#fff":"#fafbff"}}>
@@ -2731,13 +2756,13 @@ ${pw.innerHTML}
                         <td style={{padding:"6px 10px",borderBottom:"1px solid #e2e8f0",textAlign:"center",background:ri%2===0?"#f0fdfa":"#e8faf5"}}>
                           {!s.joinDate?(
                             <span style={{color:"#d1d5db",fontSize:11}}>—</span>
-                          ):!plData?.pl?(
+                          ):!plData?(
                             <span style={{fontSize:10.5,color:"#94a3b8"}}>未付与<br/><span style={{fontSize:9}}>（入社6ヶ月未満）</span></span>
                           ):(
                             <div style={{lineHeight:1.5}}>
-                              <div style={{fontFamily:"'DM Sans',sans-serif",fontWeight:700,color:"#0f766e",fontSize:13}}>{plData.pl.total}日</div>
-                              <div style={{fontSize:9.5,color:"#64748b"}}>今期{plData.pl.curr}＋繰越{plData.pl.prev}</div>
-                              {plData.paidDays>0&&<div style={{fontSize:9.5,color:"#0f766e",fontWeight:700}}>今月{plData.paidDays}日使用</div>}
+                              <div style={{fontFamily:"'DM Sans',sans-serif",fontWeight:700,color:"#0f766e",fontSize:14}}>残{plData.remaining}日</div>
+                              <div style={{fontSize:9.5,color:"#64748b"}}>付与{plData.pl.total}日 / 使用済{plData.totalUsed}日</div>
+                              {plData.paidDays>0&&<div style={{fontSize:9.5,color:"#0f766e",fontWeight:700}}>今月{plData.paidDays}日</div>}
                               {plData.pl.isHirei&&<div style={{fontSize:8.5,color:"#2563eb"}}>比例付与・週{plData.pl.weeklyDays}日</div>}
                             </div>
                           )}
