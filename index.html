@@ -1346,6 +1346,7 @@ function ShiftApp() {
   const [salaryOptJoin,setSalaryOptJoin]=useState(true);   // 入社日前除外
   const [salaryOptDeduct,setSalaryOptDeduct]=useState(false); // 社保・所得税控除表示
   const [salaryOptPaid,setSalaryOptPaid]=useState(true);   // 有休を給与に含める
+  const [salaryOptRound,setSalaryOptRound]=useState(false); // 30分単位丸め
   const [detailOpenIds,setDetailOpenIds]=useState({}); // 計算明細の個別開閉
   const [openStaffId,setOpenStaffId]=useState(null);
   const [staffSettingSection,setStaffSettingSection]=useState("patterns"); // "patterns" | "timeblocks"
@@ -1533,8 +1534,10 @@ function ShiftApp() {
     return 0;
   }
   function calcNetH(ih,im,oh,om){
-    return +(calcH(ih,im,oh,om)-calcBreakH(ih,im,oh,om)).toFixed(1);
+    return +(calcH(ih,im,oh,om)-calcBreakH(ih,im,oh,om)).toFixed(4);
   }
+  // 30分単位切り捨て丸め（salaryOptRound が true のとき給与計算で使用）
+  function roundHalf(h){ return Math.floor(h*2)/2; }
 
   const summary=useMemo(()=>staff.map(s=>{
     let totalH=0,workDays=0;
@@ -1577,6 +1580,7 @@ function ShiftApp() {
     const rate=s.hourlyRate||0;
     const leaveDate=s.leaveDate?new Date(s.leaveDate):null;
     const joinDate=salaryOptJoin&&s.joinDate?new Date(s.joinDate):null;
+    const applyRound=v=>salaryOptRound?roundHalf(v):v;
     let totalRegDayH=0,totalRegNightH=0,totalDailyOTDayH=0,totalDailyOTNightH=0;
     let paidH=0,paidDays=0;
     const weekMap={};
@@ -1590,7 +1594,7 @@ function ShiftApp() {
         if(base&&!base.isOff&&base.inTime&&base.outTime){
           const [ih,im]=base.inTime.split(":").map(Number);
           const [oh,om]=base.outTime.split(":").map(Number);
-          const netH=calcNetH(ih,im,oh,om);
+          const netH=applyRound(calcNetH(ih,im,oh,om));
           if(netH>0){paidH+=netH;paidDays++;}
         }
         return;
@@ -1600,7 +1604,7 @@ function ShiftApp() {
       const [oh,om]=eff.outTime.split(":").map(Number);
       const grossH=calcH(ih,im,oh,om);
       const breakH=calcBreakH(ih,im,oh,om);
-      const netH=+(grossH-breakH).toFixed(4);
+      const netH=applyRound(+(grossH-breakH).toFixed(4));
       if(netH<=0) return;
       const grossNightH=calcNightH(ih,im,oh,om);
       // 休憩は深夜（高単価）から先に控除
@@ -1654,7 +1658,7 @@ function ShiftApp() {
       totalOTH:fmt(finalOTDayH+finalOTNightH),
       hourlyRate:rate,
     };
-  }),[visibleStaff,cellData,globalTemplates,year,month,salaryOptJoin,salaryOptPaid]);
+  }),[visibleStaff,cellData,globalTemplates,year,month,salaryOptJoin,salaryOptPaid,salaryOptRound]);
 
   // 給与計算明細（日別・週別内訳）— クリックで個別展開
   const salaryDetail=useMemo(()=>{
@@ -2786,6 +2790,64 @@ ${pw.innerHTML}
           );
         })}
           {summaryTab==="salary"&&<>
+          {/* 月次給与サマリーカード */}
+          {(()=>{
+            const allSal=salary;
+            const grandTotal=allSal.reduce((a,x)=>a+x.totalPay,0);
+            const noRate=visibleStaff.filter(s=>!s.hourlyRate||s.hourlyRate===0);
+            const fmtPay=v=>v.toLocaleString("ja-JP");
+            const deptTotals=staffByDept.map(dept=>{
+              const tot=dept.members.map(s=>salary.find(x=>x.id===s.id)).filter(Boolean).reduce((a,x)=>a+x.totalPay,0);
+              const dc=PALETTE[dept.colorIdx];
+              return{label:dept.label,tot,color:dc.color,bg:dc.bg};
+            }).filter(d=>d.tot>0);
+            const maxTot=Math.max(...deptTotals.map(d=>d.tot),1);
+            return(
+              <div style={{background:"#0f2044",borderRadius:14,padding:"14px 18px",marginBottom:10,color:"#fff"}}>
+                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:8,marginBottom:10}}>
+                  <div>
+                    <div style={{fontSize:11,color:"rgba(255,255,255,.6)",fontWeight:600,letterSpacing:".06em",marginBottom:2}}>{year}年 {month+1}月 給与合計</div>
+                    <div style={{fontFamily:"'DM Sans',sans-serif",fontSize:28,fontWeight:700,color:"#c9a84c",lineHeight:1}}>{grandTotal>0?`¥${fmtPay(grandTotal)}`:"—"}</div>
+                  </div>
+                  <div style={{display:"flex",gap:6,alignItems:"center"}}>
+                    {noRate.length>0&&(
+                      <div style={{background:"#b91c1c",border:"1px solid #fca5a5",borderRadius:8,padding:"5px 10px",fontSize:11,color:"#fca5a5",fontWeight:700}}>
+                        ⚠ 時給未設定 {noRate.length}名
+                      </div>
+                    )}
+                    <button
+                      onClick={()=>{
+                        const rows=[["スタッフ","部署","時給","通常昼(h)","通常深夜(h)","時間外昼(h)","時間外深夜(h)","有休(h)","総支給(円)"]];
+                        staffByDept.forEach(dept=>dept.members.forEach(s=>{
+                          const sal=salary.find(x=>x.id===s.id);if(!sal)return;
+                          rows.push([s.name,dept.label,s.hourlyRate||0,sal.regularDayH,sal.regularNightH,sal.otDayH,sal.otNightH,salaryOptPaid?sal.paidH:0,sal.totalPay]);
+                        }));
+                        const csv=rows.map(r=>r.join(",")).join("\n");
+                        const blob=new Blob(["﻿"+csv],{type:"text/csv;charset=utf-8"});
+                        const a=document.createElement("a");a.href=URL.createObjectURL(blob);
+                        a.download=`給与_${year}年${month+1}月.csv`;a.click();URL.revokeObjectURL(a.href);
+                      }}
+                      style={{padding:"6px 14px",background:"#c9a84c",color:"#0f2044",border:"none",borderRadius:8,fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"'Noto Sans JP',sans-serif",whiteSpace:"nowrap"}}>
+                      ⬇ CSV出力
+                    </button>
+                  </div>
+                </div>
+                {deptTotals.length>0&&(
+                  <div style={{display:"flex",flexDirection:"column",gap:5}}>
+                    {deptTotals.map(d=>(
+                      <div key={d.label} style={{display:"flex",alignItems:"center",gap:8}}>
+                        <span style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,.7)",minWidth:60}}>{d.label}</span>
+                        <div style={{flex:1,background:"rgba(255,255,255,.1)",borderRadius:4,height:10,overflow:"hidden"}}>
+                          <div style={{width:`${(d.tot/maxTot*100).toFixed(1)}%`,background:d.color,height:"100%",borderRadius:4,transition:"width .4s"}}/>
+                        </div>
+                        <span style={{fontFamily:"'DM Sans',sans-serif",fontSize:11,fontWeight:700,color:"#c9a84c",minWidth:88,textAlign:"right"}}>¥{fmtPay(d.tot)}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })()}
           {/* 一括時給設定バー */}
           <div style={{display:"flex",alignItems:"center",gap:8,padding:"10px 14px",background:"#f8faff",border:"1px solid #dde3ef",borderRadius:12,marginBottom:10,flexWrap:"wrap"}}>
             <span style={{fontSize:12,fontWeight:700,color:"#0f2044"}}>一括時給設定</span>
@@ -2826,6 +2888,7 @@ ${pw.innerHTML}
                 {tog("有休を含める",salaryOptPaid,setSalaryOptPaid,"所定時間×1.00")}
                 {tog("入社日前を除外",salaryOptJoin,setSalaryOptJoin,"")}
                 {tog("社保・所得税を表示",salaryOptDeduct,setSalaryOptDeduct,"（概算）")}
+                {tog("30分単位丸め",salaryOptRound,setSalaryOptRound,"切り捨て")}
               </div>
             );
           })()}
