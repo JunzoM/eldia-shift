@@ -4,11 +4,10 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>SHIFTMGR — HOTEL ELDIA</title>
-  <!-- React + Babel (インターネット接続が必要) -->
-  <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
-  <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
-<script src="https://unpkg.com/@babel/standalone@7/babel.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <!-- React + Babel（PC内に同梱。インターネット不要） -->
+  <script src="/vendor/react.production.min.js"></script>
+  <script src="/vendor/react-dom.production.min.js"></script>
+  <script src="/vendor/babel.min.js"></script>
   <style>
     body { margin: 0; padding: 0; background: #f1f5f9; }
     #root { min-height: 100vh; }
@@ -27,50 +26,41 @@
   <script type="text/babel" data-presets="react">
 const { useState, useMemo, useRef, useEffect } = React;
 
-// ─── Supabase 設定 ────────────────────────────────────────────────────────────
-// 接続情報を入力してください
-const SUPABASE_URL = "https://yaslfksvlvdqlkjrnlfr.supabase.co";
-const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inlhc2xma3N2bHZkcWxranJubGZyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM4NzIxMTAsImV4cCI6MjA4OTQ0ODExMH0.1BJktZH4GwsuRzmPyTL1w1GBxhVUtGyun12rwpKBN9U";
-
-const sbClient = (SUPABASE_URL && SUPABASE_ANON_KEY)
-  ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
-  : null;
-console.log("sbClient:", sbClient ? "OK (URL=" + SUPABASE_URL + ")" : "NULL - 接続情報が未設定");
+// ─── 保存先：このPC内のサーバー（server.py → data/eldia.db） ─────────────────
+const API_BASE = "/api/store/shift/";
 
 const lsKey = k => `shiftmgr_${k}`;
 const lsGet = k => { try { const v=localStorage.getItem(lsKey(k)); return v?JSON.parse(v):null; } catch(_){return null;} };
 const lsSet = (k,v) => { try { localStorage.setItem(lsKey(k), JSON.stringify(v)); } catch(_){} };
 
 async function dbLoad(key) {
-  if (!sbClient) { console.warn("dbLoad: sbClient is null"); return null; }
-  try {
-    const { data, error } = await sbClient
-      .from("shift_store")
-      .select("value")
-      .eq("key", key)
-      .maybeSingle();
-    if (error) { console.error("dbLoad error:", error.message); throw error; }
-    const value = data ? data.value : null;
-    if (value !== null) lsSet(key, value);
-    return value;
-  } catch(e) { console.error("dbLoad exception:", e); throw e; }
+  const res = await fetch(API_BASE + encodeURIComponent(key), { cache: "no-store" });
+  if (!res.ok) throw new Error("読込エラー " + res.status);
+  const { value } = await res.json();
+  if (value !== null) lsSet(key, value);
+  return value;
 }
 
+let saveErrorShown = false;
 async function dbSave(key, value) {
   lsSet(key, value);
-  if (!sbClient) { console.warn("dbSave: sbClient is null"); return; }
   try {
-    const { data, error } = await sbClient.from("shift_store").upsert(
-      { key, value, updated_at: new Date().toISOString() },
-      { onConflict: "key" }
-    );
-    if (error) {
-      console.error("dbSave error:", error.message, error.details, error.hint);
-      alert("保存エラー: " + error.message);
-    } else {
-      console.log("dbSave ok:", key);
+    const res = await fetch(API_BASE + encodeURIComponent(key), {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ value }),
+    });
+    if (!res.ok) throw new Error("保存エラー " + res.status);
+    saveErrorShown = false;
+    return true;
+  } catch(e) {
+    console.error("dbSave:", e);
+    if (!saveErrorShown) {
+      saveErrorShown = true;
+      alert("保存できませんでした。シフト管理のサーバーが起動しているか確認してください。\n（" + e.message + "）");
     }
-  } catch(e) { console.error("dbSave exception:", e); alert("保存例外: " + e.message); }
+    return false;
+  }
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -1376,11 +1366,6 @@ function ShiftApp() {
       if(g) setGlobalTemplates(g);
       if(c) setCellData(c);
     }
-    if (!sbClient) {
-      applyLocal();
-      setDbStatus("offline");
-      return;
-    }
     setDbStatus("loading");
     Promise.all([
       dbLoad("staff"),
@@ -1403,12 +1388,12 @@ function ShiftApp() {
     if (saveTimer.current) clearTimeout(saveTimer.current);
     setDbStatus("saving");
     saveTimer.current = setTimeout(async ()=>{
-      await Promise.all([
+      const results = await Promise.all([
         dbSave("staff", staff),
         dbSave("globalTemplates", globalTemplates),
         dbSave("cellData", cellData),
       ]);
-      setDbStatus("ok");
+      setDbStatus(results.every(Boolean) ? "ok" : "error");
     }, 1200);
   },[staff,globalTemplates,cellData]);
 
@@ -2431,12 +2416,13 @@ ${pw.innerHTML}
             background:
               dbStatus==="ok"?"#4ade80":
               dbStatus==="saving"?"#fbbf24":
-              dbStatus==="offline"?"#f87171":"#94a3b8",
+              (dbStatus==="offline"||dbStatus==="error")?"#f87171":"#94a3b8",
           }}/>
           {dbStatus==="ok"?"保存済み":
            dbStatus==="saving"?"保存中…":
            dbStatus==="loading"?"読込中…":
-           dbStatus==="offline"?"オフライン":"初期化中"}
+           dbStatus==="offline"?"サーバー未起動（保存されません）":
+           dbStatus==="error"?"保存エラー":"初期化中"}
         </div>
         <button className="hdr-manual" onClick={()=>setShowManual(true)} style={{
           marginLeft:8,
