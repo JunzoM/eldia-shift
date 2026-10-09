@@ -1363,6 +1363,22 @@ function ShiftApp() {
   const [view,setView]=useState("grid");
   const [summaryTab,setSummaryTab]=useState("attendance");
   const [settingsTab,setSettingsTab]=useState("staff");
+  const [moveFrom,setMoveFrom]=useState("front");
+  const [moveTo,setMoveTo]=useState("make");
+  // 部署の一括移動：移動元の全員を移動先の末尾に（並び順を保って）付け替える
+  function moveDeptAll(){
+    if(moveFrom===moveTo) return;
+    const fromLabel=depts.find(d=>d.id===moveFrom)?.label, toLabel=depts.find(d=>d.id===moveTo)?.label;
+    const n=staff.filter(s=>s.deptId===moveFrom).length;
+    if(n===0){alert(`${fromLabel}にはスタッフがいません。`);return;}
+    if(!confirm(`${fromLabel}の${n}人（退職者を含む）を、すべて${toLabel}に移します。よろしいですか？`)) return;
+    setStaff(prev=>{
+      let no=prev.filter(s=>s.deptId===moveTo).reduce((m,s)=>Math.max(m,s.no||0),0);
+      const moving=prev.filter(s=>s.deptId===moveFrom).sort((a,b)=>a.no-b.no).map(s=>s.id);
+      const newNo={}; moving.forEach(id=>{newNo[id]=++no;});
+      return prev.map(s=>s.deptId===moveFrom?{...s,deptId:moveTo,no:newNo[s.id]}:s);
+    });
+  }
   const [bulkRate,setBulkRate]=useState(1079);
   const [salaryOpt60,setSalaryOpt60]=useState(true);      // 月60h超割増（×1.75/×2.00）
   const [salaryOptJoin,setSalaryOptJoin]=useState(true);   // 入社日前除外
@@ -2722,6 +2738,19 @@ ${pw.innerHTML}
                 style={{width:160,fontSize:12,padding:"4px 10px"}}
               />
               <button className="btn gold sm" style={{marginLeft:"auto"}} onClick={()=>setAddingStaff(v=>!v)}>＋ スタッフ追加</button>
+            </div>
+            <div className="form-row" style={{marginTop:0,marginBottom:14,borderStyle:"solid"}}>
+              <span style={{fontSize:13,fontWeight:700}}>部署の一括移動</span>
+              <select value={moveFrom} onChange={e=>setMoveFrom(e.target.value)} style={{...SEL,fontSize:13,padding:"5px 10px"}}>
+                {depts.map(d=><option key={d.id} value={d.id}>{d.label}（{staff.filter(s=>s.deptId===d.id&&s.active).length}人）</option>)}
+              </select>
+              <span style={{fontSize:13}}>の全員を</span>
+              <select value={moveTo} onChange={e=>setMoveTo(e.target.value)} style={{...SEL,fontSize:13,padding:"5px 10px"}}>
+                {depts.map(d=><option key={d.id} value={d.id}>{d.label}</option>)}
+              </select>
+              <span style={{fontSize:13}}>へ</span>
+              <button className="btn sm" disabled={moveFrom===moveTo} onClick={moveDeptAll}>移動する</button>
+              <span style={{fontSize:12,color:"var(--muted)"}}>1人ずつ変えるときは、各スタッフを開いて「部署」を変更</span>
             </div>
             {addingStaff&&(
               <div className="form-row" style={{marginBottom:14}}>
