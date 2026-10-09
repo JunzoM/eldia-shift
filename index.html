@@ -156,6 +156,9 @@ const calcPaidLeaveGrant = (joinDate, weeklyDays, weeklyHours) => {
 };
 const getDays  = (y,m) => new Date(y,m+1,0).getDate();
 const getDow   = (y,m,d) => new Date(y,m,d).getDay();
+// 日付キーは日本時間（端末の現地時刻）の YYYY-MM-DD。toISOString() はUTCになり1日前にずれるため使わない
+const ymd = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+
 const getMondayOf = date => {
   const d=new Date(date); const dow=d.getDay();
   d.setDate(d.getDate()+(dow===0?-6:1-dow)); d.setHours(0,0,0,0); return d;
@@ -1237,15 +1240,15 @@ function ShiftCell({ s, dateObj, globalTemplates, cellData, setCellData, getEffe
   function handleSelect(block){
     if(!block){clearCell(s.id,dateObj);return;}
     if(block.inH===null){
-      setCellData(prev=>{const k=`${s.id}|${dateObj.toISOString().slice(0,10)}`;return{...prev,[k]:{inTime:"",outTime:"",blockId:block.id,isOff:true,auto:false}};});
+      setCellData(prev=>{const k=`${s.id}|${ymd(dateObj)}`;return{...prev,[k]:{inTime:"",outTime:"",blockId:block.id,isOff:true,auto:false}};});
     } else {
-      setCellData(prev=>{const k=`${s.id}|${dateObj.toISOString().slice(0,10)}`;return{...prev,[k]:{inTime:fmtT(block.inH,block.inM),outTime:fmtT(block.outH,block.outM),blockId:block.id,isOff:false,auto:false}};});
+      setCellData(prev=>{const k=`${s.id}|${ymd(dateObj)}`;return{...prev,[k]:{inTime:fmtT(block.inH,block.inM),outTime:fmtT(block.outH,block.outM),blockId:block.id,isOff:false,auto:false}};});
     }
     setPP(null);
   }
 
   function handleSelectCustomTime(inTime, outTime){
-    const dStr=dateObj.toISOString().slice(0,10); // ck()と同じUTC形式で統一
+    const dStr=ymd(dateObj); // ck()と同じ形式
     setCellData(prev=>({...prev,[`${s.id}|${dStr}`]:{inTime,outTime,blockId:null,isOff:false,auto:false}}));
     setPP(null);
   }
@@ -1422,7 +1425,7 @@ function ShiftApp() {
   const headerDates=viewMode==="weekly"?weekDates:monthDates;
 
   // Cell key = staffId|YYYY-MM-DD
-  const ck=(sid,d)=>`${sid}|${d.toISOString().slice(0,10)}`;
+  const ck=(sid,d)=>`${sid}|${ymd(d)}`;
 
   function getEffective(s,dateObj){
     const key=ck(s.id,dateObj);
@@ -1634,7 +1637,7 @@ function ShiftApp() {
       totalDailyOTDayH+=dailyOTDayH;
       totalDailyOTNightH+=dailyOTNightH;
       // 週次集計用（通常時間のみ蓄積）
-      const monKey=getMondayOf(d).toISOString().slice(0,10);
+      const monKey=ymd(getMondayOf(d));
       if(!weekMap[monKey]) weekMap[monKey]={dayH:0,nightH:0};
       weekMap[monKey].dayH+=dayNetH-dailyOTDayH;
       weekMap[monKey].nightH+=nightNetH-dailyOTNightH;
@@ -1682,7 +1685,7 @@ function ShiftApp() {
       const joinDate=salaryOptJoin&&s.joinDate?new Date(s.joinDate):null;
       const wkMap={};
       monthDates.forEach(d=>{
-        const wk=getMondayOf(d).toISOString().slice(0,10);
+        const wk=ymd(getMondayOf(d));
         if(!wkMap[wk]) wkMap[wk]={days:[],rDH:0,rNH:0};
         const w=wkMap[wk];
         const excl=(leaveDate&&d>leaveDate)||(joinDate&&d<joinDate);
@@ -2607,7 +2610,7 @@ ${pw.innerHTML}
                     // 有休付与計算: アクティブパターンから週所定日数・時間を算出
                     const plData=(()=>{
                       if(!s.joinDate) return null;
-                      const todayStr=new Date().toISOString().slice(0,10);
+                      const todayStr=ymd(new Date());
                       let wPat=null,wBest=null;
                       for(const p of (s.patterns||[])){
                         const from=p.activeFrom||null;
@@ -2638,7 +2641,7 @@ ${pw.innerHTML}
                       const threshMons=done>=1?gm[done-1]:6;
                       const fromDate=new Date(join);
                       fromDate.setMonth(fromDate.getMonth()+threshMons);
-                      const fromStr=fromDate.toISOString().slice(0,10);
+                      const fromStr=ymd(fromDate);
                       // 選択月の末日までを集計範囲とする
                       const lastDay=getDays(year,month-1);
                       const toStr=`${year}-${String(month).padStart(2,'0')}-${String(lastDay).padStart(2,'0')}`;
