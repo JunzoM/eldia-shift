@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>旧データ書き出し — SHIFTMGR</title>
+<style>
+  body { margin:0; font-family:"Noto Sans JP",system-ui,sans-serif; background:#f1f5f9; color:#0f172a; }
+  .wrap { max-width:560px; margin:40px auto; padding:0 16px; }
+  .card { background:#fff; border:1px solid #cbd5e1; border-radius:12px; padding:20px; }
+  h1 { font-size:18px; margin:0 0 12px; }
+  p { font-size:14px; line-height:1.7; margin:8px 0; }
+  table { width:100%; border-collapse:collapse; font-size:14px; margin:12px 0; }
+  td { padding:6px 4px; border-bottom:1px solid #e2e8f0; }
+  td:last-child { text-align:right; font-weight:600; }
+  button { width:100%; padding:12px; border:0; border-radius:10px; background:#0f172a; color:#fff; font-size:15px; font-weight:700; cursor:pointer; }
+  button:disabled { background:#94a3b8; cursor:default; }
+  .empty { color:#b91c1c; font-weight:600; }
+  .note { font-size:12px; color:#64748b; }
+</style>
+</head>
+<body>
+<div class="wrap"><div class="card">
+  <h1>シフト表の旧データを書き出す</h1>
+  <p>このブラウザに残っているシフト表のデータを、1つのファイル（JSON）にして保存します。保存したファイルを Windows PC のシフト表で読み込んでください。</p>
+  <div id="summary"></div>
+  <button id="dl" disabled>ファイルを保存</button>
+  <p class="note">このページはデータを読むだけで、変更や削除はしません。以前シフト表を使っていた端末・ブラウザが複数ある場合は、それぞれで開いて比べてください（最終日が新しい方が最新です）。</p>
+</div></div>
+<script>
+(function () {
+  var KEYS = ["staff", "globalTemplates", "cellData"];
+  var data = {};
+  KEYS.forEach(function (k) {
+    try {
+      var v = localStorage.getItem("shiftmgr_" + k);
+      if (v) data[k] = JSON.parse(v);
+    } catch (e) {}
+  });
+
+  var el = document.getElementById("summary");
+  var btn = document.getElementById("dl");
+  if (!data.staff && !data.cellData) {
+    el.innerHTML = '<p class="empty">このブラウザには旧データが見つかりませんでした。以前シフト表を使っていた端末・ブラウザで開いてください。</p>';
+    return;
+  }
+
+  var staff = Array.isArray(data.staff) ? data.staff : [];
+  var cells = data.cellData && typeof data.cellData === "object" ? Object.keys(data.cellData) : [];
+  var dates = cells.map(function (k) { return k.split("|")[1] || ""; }).filter(Boolean).sort();
+  var tpl = Array.isArray(data.globalTemplates) ? data.globalTemplates.length : 0;
+  el.innerHTML =
+    "<table>" +
+    "<tr><td>スタッフ</td><td>" + staff.length + "人</td></tr>" +
+    "<tr><td>共通テンプレート</td><td>" + tpl + "件</td></tr>" +
+    "<tr><td>入力済みのシフト</td><td>" + cells.length + "件</td></tr>" +
+    "<tr><td>期間</td><td>" + (dates.length ? dates[0] + " 〜 " + dates[dates.length - 1] : "なし") + "</td></tr>" +
+    "</table>";
+
+  btn.disabled = false;
+  btn.onclick = function () {
+    var payload = { format: "shiftmgr-export", exported_at: new Date().toISOString(), source: location.origin, data: data };
+    var blob = new Blob([JSON.stringify(payload)], { type: "application/json" });
+    var a = document.createElement("a");
+    var d = new Date();
+    var pad = function (n) { return String(n).padStart(2, "0"); };
+    a.href = URL.createObjectURL(blob);
+    a.download = "shift-old-" + d.getFullYear() + pad(d.getMonth() + 1) + pad(d.getDate()) + ".json";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  };
+})();
+</script>
+</body>
+</html>

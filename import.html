@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>データ読み込み — SHIFTMGR</title>
+<style>
+  body { margin:0; font-family:"Noto Sans JP",system-ui,sans-serif; background:#f1f5f9; color:#0f172a; }
+  .wrap { max-width:620px; margin:40px auto; padding:0 16px; }
+  .card { background:#fff; border:1px solid #cbd5e1; border-radius:12px; padding:20px; }
+  h1 { font-size:18px; margin:0 0 12px; }
+  p { font-size:14px; line-height:1.7; margin:8px 0; }
+  table { width:100%; border-collapse:collapse; font-size:14px; margin:12px 0; }
+  th, td { padding:6px 4px; border-bottom:1px solid #e2e8f0; text-align:right; }
+  th:first-child, td:first-child { text-align:left; }
+  th { font-size:12px; color:#64748b; }
+  button { width:100%; padding:12px; border:0; border-radius:10px; background:#0f172a; color:#fff; font-size:15px; font-weight:700; cursor:pointer; margin-top:8px; }
+  button:disabled { background:#94a3b8; cursor:default; }
+  .warn { background:#fef3c7; border:1px solid #f59e0b; border-radius:8px; padding:10px 12px; font-size:13px; }
+  .err { color:#b91c1c; font-weight:600; }
+  .ok { color:#15803d; font-weight:700; }
+  a { color:#1d4ed8; }
+</style>
+</head>
+<body>
+<div class="wrap"><div class="card">
+  <h1>シフト表にデータを読み込む</h1>
+  <p>旧データ書き出しで保存したファイル（shift-old-日付.json）、またはバックアップの書き出しファイルを選んでください。</p>
+  <p class="warn">読み込むと、今このPCに入っているシフト表のデータは<b>ファイルの内容に置き換わります</b>。置き換える前に自動でバックアップを取ります。<br>シフト表を開いているタブがあれば、先に閉じてください。</p>
+  <p><input type="file" id="file" accept=".json,application/json"></p>
+  <div id="summary"></div>
+  <button id="go" disabled>読み込む（置き換える）</button>
+  <p id="result"></p>
+</div></div>
+<script>
+(function () {
+  var KEYS = ["staff", "globalTemplates", "cellData"];
+  var incoming = null;
+
+  function describe(d) {
+    var staff = Array.isArray(d.staff) ? d.staff.length : 0;
+    var tpl = Array.isArray(d.globalTemplates) ? d.globalTemplates.length : 0;
+    var cells = d.cellData && typeof d.cellData === "object" ? Object.keys(d.cellData) : [];
+    var dates = cells.map(function (k) { return k.split("|")[1] || ""; }).filter(Boolean).sort();
+    return {
+      staff: staff + "人",
+      tpl: tpl + "件",
+      cells: cells.length + "件",
+      range: dates.length ? dates[0] + " 〜 " + dates[dates.length - 1] : "なし",
+    };
+  }
+
+  function loadCurrent() {
+    return Promise.all(KEYS.map(function (k) {
+      return fetch("/api/store/shift/" + k, { cache: "no-store" })
+        .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
+        .then(function (j) { return j.value; });
+    })).then(function (vals) {
+      var d = {}; KEYS.forEach(function (k, i) { if (vals[i] !== null) d[k] = vals[i]; }); return d;
+    });
+  }
+
+  function render(cur) {
+    var a = describe(cur), b = describe(incoming);
+    document.getElementById("summary").innerHTML =
+      "<table><tr><th></th><th>今のPC内</th><th>読み込むファイル</th></tr>" +
+      "<tr><td>スタッフ</td><td>" + a.staff + "</td><td>" + b.staff + "</td></tr>" +
+      "<tr><td>共通テンプレート</td><td>" + a.tpl + "</td><td>" + b.tpl + "</td></tr>" +
+      "<tr><td>入力済みのシフト</td><td>" + a.cells + "</td><td>" + b.cells + "</td></tr>" +
+      "<tr><td>期間</td><td>" + a.range + "</td><td>" + b.range + "</td></tr></table>";
+  }
+
+  document.getElementById("file").onchange = function (e) {
+    var f = e.target.files[0];
+    var res = document.getElementById("result");
+    var btn = document.getElementById("go");
+    res.textContent = ""; btn.disabled = true; incoming = null;
+    document.getElementById("summary").innerHTML = "";
+    if (!f) return;
+    f.text().then(function (txt) {
+      var j = JSON.parse(txt);
+      var d = (j && j.format === "shiftmgr-export") ? j.data : j;  // 旧データ書き出し / バックアップ書き出し の両方に対応
+      if (!d || typeof d !== "object" || (!Array.isArray(d.staff) && !d.cellData)) throw new Error("シフト表のデータではありません");
+      if (d.staff !== undefined && !Array.isArray(d.staff)) throw new Error("スタッフの形式が正しくありません");
+      if (d.cellData !== undefined && (typeof d.cellData !== "object" || Array.isArray(d.cellData))) throw new Error("シフトの形式が正しくありません");
+      incoming = {};
+      KEYS.forEach(function (k) { if (d[k] !== undefined) incoming[k] = d[k]; });
+      return loadCurrent().then(function (cur) { render(cur); btn.disabled = false; });
+    }).catch(function (err) {
+      res.innerHTML = '<span class="err">読み込めません：' + (err.message || err) + "</span>";
+    });
+  };
+
+  document.getElementById("go").onclick = function () {
+    var btn = this, res = document.getElementById("result");
+    if (!incoming) return;
+    if (!confirm("今のPC内のシフト表データを、ファイルの内容に置き換えます。よろしいですか？")) return;
+    btn.disabled = true;
+    res.textContent = "バックアップ中…";
+    fetch("/api/backup", { method: "POST", headers: { "X-Eldia": "1" } })
+      .then(function (r) { if (!r.ok) throw new Error("バックアップに失敗しました（" + r.status + "）"); res.textContent = "読み込み中…"; })
+      .then(function () {
+        return Promise.all(Object.keys(incoming).map(function (k) {
+          return fetch("/api/store/shift/" + k, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ value: incoming[k] }),
+          }).then(function (r) { if (!r.ok) throw new Error(k + " の保存に失敗しました（" + r.status + "）"); });
+        }));
+      })
+      .then(function () {
+        res.innerHTML = '<span class="ok">読み込みが完了しました。</span> <a href="/">シフト表を開く</a>';
+      })
+      .catch(function (err) {
+        btn.disabled = false;
+        res.innerHTML = '<span class="err">' + (err.message || err) + "</span>";
+      });
+  };
+})();
+</script>
+</body>
+</html>

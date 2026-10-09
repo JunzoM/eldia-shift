@@ -34,6 +34,9 @@ ALLOWED_HOSTS = {f"127.0.0.1:{PORT}", f"localhost:{PORT}"}
 STATIC = {
     "/": "index.html",
     "/index.html": "index.html",
+    "/import": "import.html",
+    "/import.html": "import.html",
+    "/export.html": "export.html",
     "/vendor/react.production.min.js": "vendor/react.production.min.js",
     "/vendor/react-dom.production.min.js": "vendor/react-dom.production.min.js",
     "/vendor/babel.min.js": "vendor/babel.min.js",
@@ -195,6 +198,22 @@ class Handler(SimpleHTTPRequestHandler):
         self.send_header("Cache-Control", "no-cache")
         self.end_headers()
         self.wfile.write(body)
+
+    # --- POST ------------------------------------------------------------
+    def do_POST(self):
+        if not self._host_ok():
+            return self._json(403, {"error": "forbidden host"})
+        # 他サイトから勝手に呼ばれないよう、独自ヘッダー必須（付けるとブラウザが事前確認を行い、他サイトからは通らない）
+        if self.headers.get("X-Eldia") != "1":
+            return self._json(403, {"error": "forbidden"})
+        if urlparse(self.path).path == "/api/backup":
+            try:
+                backup_now()
+            except Exception as e:
+                log(f"manual backup failed: {e}")
+                return self._json(500, {"error": "backup failed"})
+            return self._json(200, {"ok": True})
+        return self._json(404, {"error": "not found"})
 
     # --- PUT ---------------------------------------------------------------
     def do_PUT(self):
