@@ -25,6 +25,8 @@ DATA_DIR = os.path.join(BASE, "data")
 DB_PATH = os.path.join(DATA_DIR, "eldia.db")
 BACKUP_DIR = os.path.join(DATA_DIR, "backups")
 LOG_PATH = os.path.join(DATA_DIR, "server.log")
+SHARE_CONF = os.path.join(DATA_DIR, "share.json")
+SHARE_ENDPOINT = os.environ.get("ELDIA_SHARE_ENDPOINT", "https://mqapkwlxlunyvsuhiujb.supabase.co/functions/v1/shift-share")
 KEEP_BACKUPS = 60
 MAX_BODY = 20 * 1024 * 1024  # 20MB
 
@@ -40,6 +42,9 @@ STATIC = {
     "/vendor/react.production.min.js": "vendor/react.production.min.js",
     "/vendor/react-dom.production.min.js": "vendor/react-dom.production.min.js",
     "/vendor/babel.min.js": "vendor/babel.min.js",
+    "/vendor/html2canvas.min.js": "vendor/html2canvas.min.js",
+    "/vendor/jspdf.umd.min.js": "vendor/jspdf.umd.min.js",
+    "/vendor/qrcode.js": "vendor/qrcode.js",
 }
 
 db_lock = threading.Lock()
@@ -150,6 +155,15 @@ class Handler(SimpleHTTPRequestHandler):
         if path == "/api/health":
             return self._json(200, {"ok": True, "db": DB_PATH})
 
+        if path == "/api/share-config":
+            key = ""
+            try:
+                with open(SHARE_CONF, encoding="utf-8") as f:
+                    key = json.load(f).get("key", "")
+            except (OSError, ValueError):
+                pass
+            return self._json(200, {"endpoint": SHARE_ENDPOINT, "key": key})
+
         if path.startswith("/api/export/"):
             app = unquote(path[len("/api/export/"):])
             if app not in ALLOWED_APPS:
@@ -206,6 +220,17 @@ class Handler(SimpleHTTPRequestHandler):
         # 他サイトから勝手に呼ばれないよう、独自ヘッダー必須（付けるとブラウザが事前確認を行い、他サイトからは通らない）
         if self.headers.get("X-Eldia") != "1":
             return self._json(403, {"error": "forbidden"})
+        if urlparse(self.path).path == "/api/share-config":
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+                key = str(json.loads(self.rfile.read(min(length, 4096)).decode("utf-8")).get("key", "")).strip()
+            except Exception:
+                return self._json(400, {"error": "bad json"})
+            if len(key) > 200:
+                return self._json(400, {"error": "key too long"})
+            with open(SHARE_CONF, "w", encoding="utf-8") as f:
+                json.dump({"key": key}, f)
+            return self._json(200, {"ok": True, "configured": bool(key)})
         if urlparse(self.path).path == "/api/backup":
             try:
                 backup_now()

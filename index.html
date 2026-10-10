@@ -8,6 +8,10 @@
   <script src="/vendor/react.production.min.js"></script>
   <script src="/vendor/react-dom.production.min.js"></script>
   <script src="/vendor/babel.min.js"></script>
+  <!-- PDF作成・QRコード（共有機能） -->
+  <script src="/vendor/html2canvas.min.js"></script>
+  <script src="/vendor/jspdf.umd.min.js"></script>
+  <script src="/vendor/qrcode.js"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=BIZ+UDPGothic:wght@400;700&display=swap">
@@ -84,6 +88,48 @@ const THEME_CSS = `:root{
   --pri:#1F5E8A; --pri-hover:#184C70; --pri-soft:#E3EEF6; --today:#E4EFF8;
   --auto:#C58A12; --sun:#C23B2A; --sat:#2459B8; --sun-bg:#FEF8F7; --sat-bg:#F8FAFE;
 }`;
+
+
+// ─── 共有（PDF作成 → 共通Supabaseへ保存 → QR/LINE/メール） ──────────────────
+async function buildShiftPdf(container){
+  if(document.fonts&&document.fonts.ready) await document.fonts.ready;
+  const pages=[...container.children].filter(el=>el.tagName==="DIV");
+  if(!pages.length) throw new Error("PDFにするシフト表がありません");
+  const { jsPDF } = window.jspdf;
+  let pdf=null;
+  for(const pg of pages){
+    const land=pg.offsetWidth>pg.offsetHeight;
+    const W=land?297:210, H=land?210:297;
+    const canvas=await window.html2canvas(pg,{scale:2,backgroundColor:"#ffffff",logging:false});
+    if(!pdf) pdf=new jsPDF({orientation:land?"landscape":"portrait",unit:"mm",format:"a4",compress:true});
+    else pdf.addPage("a4",land?"landscape":"portrait");
+    // A4に収まるよう縮小（縦横比は維持）
+    const r=Math.min(W/canvas.width, H/canvas.height);
+    const w=canvas.width*r, h=canvas.height*r;
+    pdf.addImage(canvas.toDataURL("image/jpeg",0.9),"JPEG",(W-w)/2,0,w,h);
+  }
+  return pdf.output("blob");
+}
+async function uploadShiftPdf(blob){
+  const conf=await fetch("/api/share-config",{cache:"no-store"}).then(r=>r.json());
+  if(!conf.key) throw new Error("共有キーが設定されていません。「設定」→「データ管理」→「共有の設定」で共有キーを入力してください。");
+  let res;
+  try{
+    res=await fetch(conf.endpoint,{method:"POST",headers:{"Content-Type":"application/pdf","x-share-key":conf.key},body:blob});
+  }catch(e){ throw new Error("インターネットに接続できませんでした。接続を確認してください。"); }
+  const j=await res.json().catch(()=>({}));
+  if(res.status===401) throw new Error("共有キーが正しくありません。Supabaseに設定したキーと同じものを入力してください。");
+  if(!res.ok||!j.url) throw new Error(j.error||("共有に失敗しました（"+res.status+"）"));
+  return j;
+}
+function qrSvg(text){
+  const qr=window.qrcode(0,"M"); qr.addData(text); qr.make();
+  return qr.createSvgTag({cellSize:6,margin:4,scalable:true});
+}
+function downloadBlob(blob,name){
+  const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download=name;
+  document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(a.href),5000);
+}
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const JP_WD = ["日","月","火","水","木","金","土"];
@@ -1533,6 +1579,29 @@ function DayTimeline({ date, staffByDept, getEffective, setCellData, locked, onU
   );
 }
 
+
+function ShareKeySetting(){
+  const [key,setKey]=useState(""); const [saved,setSaved]=useState(null); const [msg,setMsg]=useState("");
+  useEffect(()=>{ fetch("/api/share-config",{cache:"no-store"}).then(r=>r.json()).then(j=>{setSaved(!!j.key);}).catch(()=>setSaved(false)); },[]);
+  async function save(){
+    const r=await fetch("/api/share-config",{method:"POST",headers:{"Content-Type":"application/json","X-Eldia":"1"},body:JSON.stringify({key:key.trim()})});
+    if(r.ok){ setSaved(!!key.trim()); setKey(""); setMsg(key.trim()?"保存しました。":"共有キーを削除しました。"); } else setMsg("保存できませんでした。");
+  }
+  return (
+    <div className="card" style={{marginBottom:0}}>
+      <div className="card-hdr">共有の設定（QRコード・LINE・メール）</div>
+      <div style={{padding:"12px 16px",fontSize:14,lineHeight:1.8}}>
+        <p>シフト表をスマホに共有するための「共有キー」です。Supabaseに登録したキー（SHIFT_SHARE_KEY）と同じ文字を入力します。PCごとに1回だけ設定してください。</p>
+        <div style={{display:"flex",gap:8,alignItems:"center",marginTop:10,flexWrap:"wrap"}}>
+          <input className="inp" type="password" autoComplete="off" placeholder={saved?"設定済み（変更する場合のみ入力）":"共有キーを入力"} value={key} onChange={e=>setKey(e.target.value)} style={{width:300}}/>
+          <button className="btn" onClick={save} disabled={!key.trim()&&!saved}>{key.trim()?"保存":"削除"}</button>
+          <span style={{fontSize:12.5,color:saved?"#2E8B57":"var(--muted)"}}>{msg||(saved===null?"":saved?"設定済み":"未設定")}</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ══════════════════════════════════════════════════════════════════════════════
 // ─── Main App ─────────────────────────────────────────────────────────────────
 // ══════════════════════════════════════════════════════════════════════════════
@@ -2104,6 +2173,51 @@ ${body ? body.innerHTML : ""}
     const [fmt,setFmt]=useState("weekly-portrait");
     const [halfSel,setHalfSel]=useState("both"); // "both"|"first"|"second"
     const [deptSel,setDeptSel]=useState({make:true,kitchen:true,front:true}); // 部門選択
+    const [share,setShare]=useState({busy:"",url:"",expires:"",key:"",error:"",qr:false,copied:false});
+    const [pdfRender,setPdfRender]=useState(false);
+    const pdfRef=useRef(null);
+    const shareKey=JSON.stringify([fmt,halfSel,deptSel]);
+    const shareTitle=fmt.includes("weekly")?`シフト表 ${weekLabel}`:`シフト表 ${year}年${month+1}月`;
+    async function makePdf(){
+      setPdfRender(true);
+      await new Promise(r=>setTimeout(r,300));      // オフスクリーンに描画されるのを待つ
+      try{ return await buildShiftPdf(pdfRef.current); } finally { setPdfRender(false); }
+    }
+    async function getShareUrl(){
+      if(share.url&&share.key===shareKey) return share;
+      setShare(p=>({...p,busy:"PDFを作成しています…",error:""}));
+      try{
+        const blob=await makePdf();
+        setShare(p=>({...p,busy:"共有用にアップロードしています…"}));
+        const j=await uploadShiftPdf(blob);
+        const exp=new Date(j.expires_at); const expires=`${exp.getMonth()+1}月${exp.getDate()}日`;
+        const next={busy:"",url:j.url,expires,key:shareKey,error:"",qr:false,copied:false};
+        setShare(next); return next;
+      }catch(e){ setShare(p=>({...p,busy:"",error:e.message||String(e)})); return null; }
+    }
+    const shareText=(s)=>`${shareTitle}です。\n下のリンクからPDFで見られます（${s.expires}まで）。\n${s.url}`;
+    async function shareQR(){ const s=await getShareUrl(); if(s) setShare(p=>({...p,qr:true})); }
+    async function shareLINE(){
+      const w=window.open("about:blank","_blank");
+      const s=await getShareUrl();
+      if(!s){ w&&w.close(); return; }
+      const u="https://line.me/R/share?text="+encodeURIComponent(shareText(s));
+      if(w) w.location.href=u; else window.open(u,"_blank");
+    }
+    async function shareMail(){
+      const s=await getShareUrl(); if(!s) return;
+      location.href="mailto:?subject="+encodeURIComponent(shareTitle)+"&body="+encodeURIComponent(shareText(s));
+    }
+    async function shareCopy(){
+      const s=await getShareUrl(); if(!s) return;
+      try{ await navigator.clipboard.writeText(shareText(s)); setShare(p=>({...p,copied:true})); }
+      catch(e){ prompt("コピーしてください",s.url); }
+    }
+    async function savePdf(){
+      setShare(p=>({...p,busy:"PDFを作成しています…",error:""}));
+      try{ const blob=await makePdf(); downloadBlob(blob,fmt.includes("weekly")?`シフト表_${ymd(weekDates[0])}の週.pdf`:`シフト表_${year}年${month+1}月.pdf`); setShare(p=>({...p,busy:""})); }
+      catch(e){ setShare(p=>({...p,busy:"",error:e.message||String(e)})); }
+    }
     function doPrint(){
       const pw = document.getElementById("__pw__");
       if (!pw) return;
@@ -2370,6 +2484,18 @@ ${pw.innerHTML}
           <style>{`@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@300;400;500;700&family=DM+Sans:wght@400;600;700&display=swap');*{box-sizing:border-box;margin:0;padding:0}table{border-collapse:collapse}`}</style>
           {printContent}
         </div>
+        {pdfRender&&<div ref={pdfRef} aria-hidden="true" style={{position:"fixed",left:-30000,top:0,background:"#fff",fontFamily:"var(--font)"}}>{printContent}</div>}
+        {share.qr&&share.url&&(
+          <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.55)",zIndex:9600,display:"flex",alignItems:"center",justifyContent:"center"}} onClick={e=>{if(e.target===e.currentTarget)setShare(p=>({...p,qr:false}));}}>
+            <div role="dialog" aria-label="QRコード" style={{background:"#fff",borderRadius:14,padding:24,width:360,maxWidth:"92vw",textAlign:"center",boxShadow:"0 20px 60px rgba(0,0,0,.35)"}}>
+              <div style={{fontWeight:700,fontSize:16,marginBottom:4}}>{shareTitle}</div>
+              <div style={{fontSize:12.5,color:"var(--muted)",marginBottom:12}}>スマホのカメラで読み取ると、PDFで開きます（{share.expires}まで）</div>
+              <div style={{width:280,height:280,margin:"0 auto"}} dangerouslySetInnerHTML={{__html:qrSvg(share.url)}}/>
+              <div style={{fontSize:11,color:"var(--muted)",wordBreak:"break-all",margin:"10px 0 14px"}}>{share.url}</div>
+              <button className="btn sec" onClick={()=>setShare(p=>({...p,qr:false}))}>閉じる</button>
+            </div>
+          </div>
+        )}
         <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.5)",zIndex:9000,display:"flex",alignItems:"center",justifyContent:"center"}} onClick={e=>{if(e.target===e.currentTarget)onClose();}}>
           <div style={{background:"#fff",borderRadius:14,padding:24,width:660,maxWidth:"95vw",maxHeight:"90vh",overflow:"auto",boxShadow:"0 20px 60px rgba(0,0,0,.3)"}}>
             <div style={{display:"flex",alignItems:"center",marginBottom:20}}>
@@ -2431,6 +2557,22 @@ ${pw.innerHTML}
                 </div>
               </div>
             )}
+            {/* 共有 */}
+            <div style={{border:"1px solid var(--line)",borderRadius:10,padding:"12px 14px",marginBottom:14}}>
+              <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+                <span style={{fontSize:13,fontWeight:700,marginRight:4}}>共有</span>
+                <button className="btn sec sm" disabled={!!share.busy} onClick={shareQR}>QRコード</button>
+                <button className="btn sec sm" disabled={!!share.busy} onClick={shareLINE}>LINE</button>
+                <button className="btn sec sm" disabled={!!share.busy} onClick={shareMail}>メール</button>
+                <button className="btn sec sm" disabled={!!share.busy} onClick={shareCopy}>{share.copied&&share.key===shareKey?"コピーしました":"リンクをコピー"}</button>
+                <button className="btn sec sm" disabled={!!share.busy} onClick={savePdf}>PDFを保存</button>
+              </div>
+              <div style={{fontSize:12,marginTop:8,color:share.error?"var(--sun)":"var(--muted)",lineHeight:1.6}}>
+                {share.busy||share.error||(share.url&&share.key===shareKey
+                  ?`共有リンクを作成済み（${share.expires}まで有効）。内容を変えたら、もう一度押すと新しいリンクになります。`
+                  :"上で選んだ形式のシフト表をPDFにして共有します。リンクは約2か月で開けなくなります。")}
+              </div>
+            </div>
             <div style={{background:"var(--surf2)",borderRadius:8,padding:"10px 14px",marginBottom:20,fontSize:12,color:"#475569",lineHeight:1.8}}>
               <strong style={{color:"var(--ink)"}}>印刷のヒント</strong><br/>・余白「なし」推奨　・「背景グラフィックを印刷する」ON
             </div>
@@ -3150,6 +3292,8 @@ ${pw.innerHTML}
                   <div style={{marginTop:10}}><a className="btn sec" href="/import">バックアップから読み込む</a></div>
                 </div>
               </div>
+
+              <ShareKeySetting/>
 
               <div className="card" style={{marginBottom:0,borderColor:"#E7B8B2"}}>
                 <div className="card-hdr" style={{color:"var(--sun)"}}>すべて消去して一から作り直す</div>
