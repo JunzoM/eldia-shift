@@ -1725,7 +1725,7 @@ function ShiftApp() {
   function addStaff(){
     if(!newStaff.name.trim())return;
     const maxNo=staff.filter(s=>s.deptId===newStaff.deptId).reduce((m,s)=>Math.max(m,s.no),0);
-    setStaff(p=>[...p,{id:nextId.current++,no:maxNo+1,name:newStaff.name.trim(),deptId:newStaff.deptId,active:true,joinDate:"",leaveDate:"",hourlyRate:1079,hasSocialIns:false,hasKaigo:false,hasEmploymentIns:true,timeBlocks:[],patterns:[],activePatternId:null,periodPatterns:[]}]);
+    setStaff(p=>[...p,{id:Math.max(nextId.current++,...p.map(x=>(+x.id||0)+1)),no:maxNo+1,name:newStaff.name.trim(),deptId:newStaff.deptId,active:true,joinDate:"",leaveDate:"",hourlyRate:1079,hasSocialIns:false,hasKaigo:false,hasEmploymentIns:true,timeBlocks:[],patterns:[],activePatternId:null,periodPatterns:[]}]);
     setNewStaff({name:"",deptId:"front"});setAddingStaff(false);
   }
 
@@ -2526,6 +2526,7 @@ ${pw.innerHTML}
         .inp:focus{border-color:var(--pri);box-shadow:0 0 0 3px var(--pri-soft)}
         .form-row{background:var(--surf);border-radius:10px;border:1px dashed var(--line);padding:12px 14px;margin-top:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
         .btn{background:var(--pri);color:#fff;border:1px solid var(--pri);height:34px;padding:0 14px;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;transition:background .15s;display:inline-flex;align-items:center;gap:6px}
+        a.btn{text-decoration:none}
         .btn:hover{background:var(--pri-hover)}
         .btn.sec{background:var(--surf);color:var(--ink);border-color:var(--line)}
         .btn.sec:hover{background:var(--surf2)}
@@ -2953,6 +2954,7 @@ ${pw.innerHTML}
           <div className="sub-tabs">
             <button className={`sub-tab${settingsTab==="staff"?" on":""}`} onClick={()=>setSettingsTab("staff")}>👤 スタッフ</button>
             <button className={`sub-tab${settingsTab==="global"?" on":""}`} onClick={()=>setSettingsTab("global")}>🌐 共通テンプレート</button>
+            <button className={`sub-tab${settingsTab==="data"?" on":""}`} onClick={()=>setSettingsTab("data")}>💾 データ管理</button>
           </div>
 
           {/* ── Staff settings ── */}
@@ -3118,6 +3120,55 @@ ${pw.innerHTML}
           {settingsTab==="global"&&(
             <div>
               <GlobalTemplateManager globalTemplates={globalTemplates} setGlobalTemplates={setGlobalTemplates}/>
+            </div>
+          )}
+
+          {/* ── データ管理 ── */}
+          {settingsTab==="data"&&(
+            <div style={{display:"flex",flexDirection:"column",gap:14,maxWidth:760}}>
+              <div className="card" style={{marginBottom:0}}>
+                <div className="card-hdr">今のデータ</div>
+                <div style={{padding:"12px 16px",fontSize:14,display:"flex",gap:24,flexWrap:"wrap"}}>
+                  <span>スタッフ <b>{staff.length}</b>人</span>
+                  <span>共通テンプレート <b>{globalTemplates.length}</b>件</span>
+                  <span>入力済みのシフト <b>{Object.keys(cellData).length}</b>件</span>
+                </div>
+              </div>
+
+              <div className="card" style={{marginBottom:0}}>
+                <div className="card-hdr">バックアップを保存（別のPCへ移す）</div>
+                <div style={{padding:"12px 16px",fontSize:14,lineHeight:1.8}}>
+                  <p>スタッフ・共通テンプレート・シフトをすべて1つのファイル（shift-日付.json）に保存します。会社のWindows PCへ移すときは、このファイルをUSBメモリやメールで渡し、そちらの「バックアップから読み込む」で読み込んでください。</p>
+                  <div style={{marginTop:10}}><a className="btn" href="/api/export/shift" download>バックアップを保存</a></div>
+                </div>
+              </div>
+
+              <div className="card" style={{marginBottom:0}}>
+                <div className="card-hdr">バックアップから読み込む</div>
+                <div style={{padding:"12px 16px",fontSize:14,lineHeight:1.8}}>
+                  <p>保存したファイルを選び、このPCのデータと置き換えます。置き換える前に自動でバックアップを取ります。</p>
+                  <div style={{marginTop:10}}><a className="btn sec" href="/import">バックアップから読み込む</a></div>
+                </div>
+              </div>
+
+              <div className="card" style={{marginBottom:0,borderColor:"#E7B8B2"}}>
+                <div className="card-hdr" style={{color:"var(--sun)"}}>すべて消去して一から作り直す</div>
+                <div style={{padding:"12px 16px",fontSize:14,lineHeight:1.8}}>
+                  <p>スタッフ・共通テンプレート・入力したシフトをすべて消します（部署と休みの種類は残ります）。消す前に自動でバックアップを取るので、間違えたときは「バックアップから読み込む」で戻せます。</p>
+                  <div style={{marginTop:10}}>
+                    <button className="btn danger" onClick={async()=>{
+                      if(!confirm("スタッフ・共通テンプレート・シフトをすべて消去します。よろしいですか？")) return;
+                      if(prompt("確認のため「消去」と入力してください")!=="消去") return;
+                      try{
+                        const r=await fetch("/api/backup",{method:"POST",headers:{"X-Eldia":"1"}});
+                        if(!r.ok) throw new Error(r.status);
+                      }catch(e){ alert("バックアップが取れなかったため、消去を中止しました。サーバーが起動しているか確認してください。"); return; }
+                      setStaff([]); setGlobalTemplates([]); setCellData({}); setOpenStaffId(null);
+                      alert("消去しました。「スタッフ」タブからスタッフを追加して、組み直してください。");
+                    }}>すべて消去する</button>
+                  </div>
+                </div>
+              </div>
             </div>
           )}
         </>}

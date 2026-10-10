@@ -1,3 +1,6 @@
 # eldia-shift
 
-HOTEL ELDIA シフト管理（Windows PC 専用）。セットアップは [WINDOWS.md](WINDOWS.md) を参照。
+HOTEL ELDIA シフト管理（PC内で動くローカル版）。
+
+- Windows PC での設置・運用：[WINDOWS.md](WINDOWS.md)
+- Mac で組んで Windows へ移す：[MAC.md](MAC.md)
