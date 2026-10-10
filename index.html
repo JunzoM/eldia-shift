@@ -1350,7 +1350,8 @@ function resolveAutoSchedule(s, dStr, dow, gTemplates) {
 // ══════════════════════════════════════════════════════════════════════════════
 const TL_PX = 46;          // 1時間あたりの幅(px)
 const TL_SNAP = 15;        // 15分単位で吸着
-const TL_MAX_END = 34*60;  // 終了は翌10:00まで
+const TL_START = 5*60;     // 表示は朝5:00から
+const TL_MAX_END = 34*60;  // 翌10:00まで
 const TL_NEW_LEN = 8*60;   // 空き部分をクリックしたときの長さ
 const toMin = t => { if(!t) return null; const [h,m]=t.split(":").map(Number); return h*60+(m||0); };
 const minToT = m => { const x=((m%1440)+1440)%1440; return fmtT(Math.floor(x/60), x%60); };
@@ -1380,10 +1381,10 @@ function DayTimeline({ date, staffByDept, getEffective, setCellData, locked, onU
     }),
   })).filter(d=>d.members.length>0);
 
-  const maxOut = Math.max(1440, ...rows.flatMap(d=>d.members.map(m=>m.span?m.span.outM:0)));
-  const endH = Math.min(TL_MAX_END/60, Math.ceil(maxOut/60));
-  const hours = Array.from({length:endH},(_,i)=>i);
-  const trackW = endH*TL_PX;
+  const startH = TL_START/60, endH = TL_MAX_END/60;
+  const hours = Array.from({length:endH-startH},(_,i)=>startH+i);
+  const trackW = (endH-startH)*TL_PX;
+  const X = m => (m-TL_START)/60*TL_PX;   // 分 → 横位置(px)
 
   // 時間帯ごとの人数
   const counts = hours.map(h=>rows.reduce((n,d)=>n+d.members.filter(m=>m.span&&m.span.inM<(h+1)*60&&m.span.outM>h*60).length,0));
@@ -1400,8 +1401,8 @@ function DayTimeline({ date, staffByDept, getEffective, setCellData, locked, onU
   function beginNew(e, s){
     if(locked) return;
     const r=e.currentTarget.getBoundingClientRect();
-    const at=snap((e.clientX-r.left)/TL_PX*60);
-    if(at<0||at>=1440) return;
+    const at=TL_START+snap((e.clientX-r.left)/TL_PX*60);
+    if(at<TL_START||at>=1440) return;
     e.preventDefault();
     const d={sid:s.id,mode:"new",x0:e.clientX,in0:at,out0:at,inM:at,outM:Math.min(at+TL_NEW_LEN,TL_MAX_END),moved:false};
     dragRef.current=d; setDrag(d);
@@ -1415,15 +1416,15 @@ function DayTimeline({ date, staffByDept, getEffective, setCellData, locked, onU
       let {inM,outM}=d;
       if(d.mode==="move"){
         const len=d.out0-d.in0;
-        inM=Math.max(0,Math.min(1440-TL_SNAP,d.in0+dm)); outM=inM+len;
+        inM=Math.max(Math.min(TL_START,d.in0),Math.min(1440-TL_SNAP,d.in0+dm)); outM=inM+len;
         if(outM>TL_MAX_END){ outM=TL_MAX_END; inM=outM-len; }
       }else if(d.mode==="l"){
-        inM=Math.max(0,Math.min(d.out0-TL_SNAP,d.in0+dm,1440-TL_SNAP));
+        inM=Math.max(Math.min(TL_START,d.in0),Math.min(d.out0-TL_SNAP,d.in0+dm,1440-TL_SNAP));
       }else if(d.mode==="r"){
         outM=Math.max(d.in0+TL_SNAP,Math.min(d.out0+dm,d.in0+1440,TL_MAX_END));
       }else if(d.mode==="new"){
         if(Math.abs(e.clientX-d.x0)<4 && !d.moved) return;
-        const t=Math.max(0,Math.min(TL_MAX_END,d.in0+dm));
+        const t=Math.max(TL_START,Math.min(TL_MAX_END,d.in0+dm));
         inM=Math.min(d.in0,t); outM=Math.max(d.in0,t);
         if(inM>=1440) inM=1440-TL_SNAP;
         if(outM-inM<TL_SNAP) outM=inM+TL_SNAP;
@@ -1474,7 +1475,7 @@ function DayTimeline({ date, staffByDept, getEffective, setCellData, locked, onU
             <div className="tl-name" style={{width:NAME_W}}/>
             <div className="tl-track" style={{width:trackW}}>
               {hours.map(h=>(
-                <div key={h} className={`tl-hour${h>=24?" next":""}`} style={{left:h*TL_PX,width:TL_PX}}>{h>=24?`翌${h-24}`:h}</div>
+                <div key={h} className={`tl-hour${h>=24?" next":""}`} style={{left:(h-startH)*TL_PX,width:TL_PX}}>{h>=24?`翌${h-24}`:h}</div>
               ))}
             </div>
           </div>
@@ -1482,8 +1483,8 @@ function DayTimeline({ date, staffByDept, getEffective, setCellData, locked, onU
           <div className="tl-row tl-count">
             <div className="tl-name" style={{width:NAME_W}}>出勤人数</div>
             <div className="tl-track" style={{width:trackW}}>
-              {counts.map((c,h)=>(
-                <div key={h} className="tl-cnt" style={{left:h*TL_PX,width:TL_PX,color:c?"var(--ink)":"var(--line)"}}>{c||"·"}</div>
+              {counts.map((c,i)=>(
+                <div key={i} className="tl-cnt" style={{left:i*TL_PX,width:TL_PX,color:c?"var(--ink)":"var(--line)"}}>{c||"·"}</div>
               ))}
             </div>
           </div>
@@ -1506,12 +1507,12 @@ function DayTimeline({ date, staffByDept, getEffective, setCellData, locked, onU
                         <div style={{fontSize:12,color:"var(--muted)",fontFamily:"var(--num)"}}>{span?`${minToT(span.inM)}〜${minToT(span.outM)}　${fmtDur(len)}`:(eff&&eff.isOff?"休み":"—")}</div>
                       </div>
                       <div className={`tl-track tl-lane${locked?" locked":""}`} style={{width:trackW}} onPointerDown={e=>{ if(e.target===e.currentTarget) beginNew(e,s); }}>
-                        {hours.map(h=><div key={h} className="tl-grid" style={{left:h*TL_PX}}/>)}
-                        <div className="tl-midnight" style={{left:24*TL_PX}}/>
+                        {hours.map(h=><div key={h} className="tl-grid" style={{left:(h-startH)*TL_PX}}/>)}
+                        <div className="tl-midnight" style={{left:X(1440)}}/>
                         {!span&&eff&&eff.isOff&&<div className="tl-off">休</div>}
                         {span&&(
                           <div className={`tl-bar${auto?" auto":""}${isDrag?" dragging":""}`}
-                            style={{left:span.inM/60*TL_PX,width:Math.max(len/60*TL_PX,8)}}
+                            style={{left:Math.max(0,X(span.inM)),width:Math.max(Math.min(X(span.outM),trackW)-Math.max(0,X(span.inM)),8)}}
                             onPointerDown={e=>begin(e,s,"move",span.inM,span.outM)}
                             title={`${s.name} ${minToT(span.inM)}〜${minToT(span.outM)}`}>
                             {!locked&&<span className="tl-h l" onPointerDown={e=>begin(e,s,"l",span.inM,span.outM)}/>}
