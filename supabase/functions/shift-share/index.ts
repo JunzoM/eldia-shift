@@ -9,11 +9,11 @@ const MAX_BYTES = 10 * 1024 * 1024;
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const sb = createClient(SUPABASE_URL, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
 
-// PC版（http://127.0.0.1:8765 / http://localhost:8765）からのみ受け付ける
-const ALLOWED_ORIGINS = new Set(["http://127.0.0.1:8765", "http://localhost:8765"]);
+// PC版（http://127.0.0.1:8765 / localhost）と、事務所LAN内のiPad（http://<プライベートIP>:8765）からのみ受け付ける
+const ORIGIN_RE = /^http:\/\/(127\.0\.0\.1|localhost|10\.\d{1,3}\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}):8765$/;
 function cors(req: Request): Record<string, string> {
   const o = req.headers.get("origin") ?? "";
-  return ALLOWED_ORIGINS.has(o)
+  return ORIGIN_RE.test(o)
     ? { "Access-Control-Allow-Origin": o, "Access-Control-Allow-Methods": "POST, OPTIONS",
         "Access-Control-Allow-Headers": "content-type, x-share-key", "Vary": "Origin" }
     : {};
