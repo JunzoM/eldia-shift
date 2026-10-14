@@ -3,6 +3,9 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="シフト表">
   <title>SHIFTMGR — HOTEL ELDIA</title>
   <!-- React + Babel（PC内に同梱。インターネット不要） -->
   <script src="/vendor/react.production.min.js"></script>
@@ -49,33 +52,56 @@ const lsKey = k => `shiftmgr_${k}`;
 const lsGet = k => { try { const v=localStorage.getItem(lsKey(k)); return v?JSON.parse(v):null; } catch(_){return null;} };
 const lsSet = (k,v) => { try { localStorage.setItem(lsKey(k), JSON.stringify(v)); } catch(_){} };
 
+// 各データの「版」（保存のたびに+1）と、最後に読み書きした内容。
+// PCとiPadで同時に編集したとき、相手の変更を上書きしないために使う。
+const REVS = {};
+const LAST = {};
+function toLogin(){ location.href = "/login"; }
+
 async function dbLoad(key) {
   const res = await fetch(API_BASE + encodeURIComponent(key), { cache: "no-store" });
+  if (res.status === 401) { toLogin(); throw new Error("ログインが必要です"); }
   if (!res.ok) throw new Error("読込エラー " + res.status);
-  const { value } = await res.json();
+  const { value, rev } = await res.json();
+  REVS[key] = rev || 0;
+  LAST[key] = JSON.stringify(value);
   if (value !== null) lsSet(key, value);
   return value;
 }
 
+async function dbRevs() {
+  const res = await fetch("/api/revs/shift", { cache: "no-store" });
+  if (res.status === 401) { toLogin(); throw new Error("ログインが必要です"); }
+  if (!res.ok) throw new Error("読込エラー " + res.status);
+  return res.json();
+}
+
 let saveErrorShown = false;
+// 戻り値: "ok" | "skip"（変更なし）| "conflict"（別の端末が先に保存）| "error"
 async function dbSave(key, value) {
+  const json = JSON.stringify(value);
+  if (LAST[key] === json) return "skip";
   lsSet(key, value);
   try {
     const res = await fetch(API_BASE + encodeURIComponent(key), {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ value }),
+      body: JSON.stringify({ value, base_rev: REVS[key] ?? 0 }),
     });
+    if (res.status === 401) { toLogin(); return "error"; }
+    if (res.status === 409) return "conflict";
     if (!res.ok) throw new Error("保存エラー " + res.status);
+    const j = await res.json();
+    REVS[key] = j.rev; LAST[key] = json;
     saveErrorShown = false;
-    return true;
+    return "ok";
   } catch(e) {
     console.error("dbSave:", e);
     if (!saveErrorShown) {
       saveErrorShown = true;
-      alert("保存できませんでした。シフト管理のサーバーが起動しているか確認してください。\n（" + e.message + "）");
+      alert("保存できませんでした。シフト表のサーバー（PC）が起動しているか確認してください。\n（" + e.message + "）");
     }
-    return false;
+    return "error";
   }
 }
 
@@ -1580,6 +1606,67 @@ function DayTimeline({ date, staffByDept, getEffective, setCellData, locked, onU
 }
 
 
+function LanSetting(){
+  const [c,setC]=useState(null); const [pin,setPin]=useState(""); const [msg,setMsg]=useState(""); const [remote,setRemote]=useState(false);
+  async function load(){
+    const r=await fetch("/api/lan-config",{cache:"no-store"});
+    if(r.status===403){ setRemote(true); return; }
+    setC(await r.json());
+  }
+  useEffect(()=>{ load().catch(()=>{}); },[]);
+  async function post(body,okMsg){
+    const r=await fetch("/api/lan-config",{method:"POST",headers:{"Content-Type":"application/json","X-Eldia":"1"},body:JSON.stringify(body)});
+    const j=await r.json().catch(()=>({}));
+    if(!r.ok){ setMsg(j.error||"設定できませんでした"); return false; }
+    setMsg(okMsg); await load(); return true;
+  }
+  if(remote) return (
+    <div className="card" style={{marginBottom:0}}>
+      <div className="card-hdr">iPadから使う</div>
+      <div style={{padding:"12px 16px",fontSize:14,lineHeight:1.8}}>この端末はPCのシフト表につないで使っています。iPad利用のオン／オフやPINの変更は、PC本体の画面で行ってください。</div>
+    </div>
+  );
+  if(!c) return null;
+  const url=c.addresses[0];
+  return (
+    <div className="card" style={{marginBottom:0}}>
+      <div className="card-hdr">iPadから使う（同じ事務所Wi-Fi）</div>
+      <div style={{padding:"12px 16px",fontSize:14,lineHeight:1.8,display:"flex",flexDirection:"column",gap:12}}>
+        <p>オンにすると、このPCと同じWi-FiにつないだiPadから、PINを入れてシフト表を開けます。データはこのPCにあり、PCとiPadのどちらで直しても同じシフト表です。<b>お客様用のWi-Fiでは使わないでください。</b></p>
+        <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+          <span style={{fontWeight:700,width:72}}>PIN</span>
+          <input className="inp" type="password" inputMode="numeric" autoComplete="new-password" placeholder={c.pin_set?"設定済み（変更する場合のみ入力）":"6〜12桁の数字"} value={pin} onChange={e=>setPin(e.target.value.replace(/\D/g,""))} style={{width:220}}/>
+          <button className="btn sec" disabled={pin.length<6} onClick={async()=>{ if(await post({pin},"PINを保存しました。iPadではこのPINでログインします。")) setPin(""); }}>{c.pin_set?"PINを変更":"PINを決める"}</button>
+        </div>
+        <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+          <span style={{fontWeight:700,width:72}}>iPad利用</span>
+          {c.enabled
+            ? <><b style={{color:"#2E8B57"}}>オン</b><button className="btn sec sm" onClick={()=>post({enabled:false},"iPadからの利用をオフにしました。")}>オフにする</button></>
+            : <><span style={{color:"var(--muted)"}}>オフ</span><button className="btn sm" disabled={!c.pin_set} onClick={()=>post({enabled:true},"iPadからの利用をオンにしました。")}>オンにする</button>{!c.pin_set&&<span style={{fontSize:12,color:"var(--muted)"}}>先にPINを決めてください</span>}</>}
+        </div>
+        {c.enabled&&(
+          url ? (
+            <div style={{display:"flex",gap:16,alignItems:"center",flexWrap:"wrap",background:"var(--surf2)",border:"1px solid var(--line)",borderRadius:10,padding:12}}>
+              <div style={{width:150,height:150,background:"#fff"}} dangerouslySetInnerHTML={{__html:qrSvg(url)}}/>
+              <div style={{fontSize:13.5,lineHeight:1.8}}>
+                <div>iPadのカメラでQRを読み取るか、Safariで次を開く</div>
+                <div style={{fontSize:18,fontWeight:700,fontFamily:"var(--num)"}}>{url}</div>
+                {c.addresses.length>1&&<div style={{fontSize:12,color:"var(--muted)"}}>開けないときは：{c.addresses.slice(1).join("　")}</div>}
+                <div style={{fontSize:12,color:"var(--muted)"}}>開いたら共有ボタン →「ホーム画面に追加」でアプリのように使えます</div>
+              </div>
+            </div>
+          ) : <p style={{color:"var(--sun)"}}>このPCのWi-Fiのアドレスが見つかりません。Wi-Fi（またはLAN）につながっているか確認してください。</p>
+        )}
+        <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",fontSize:13}}>
+          <span>ログイン中の端末：{c.devices}台</span>
+          {c.devices>0&&<button className="btn sec sm" onClick={()=>{ if(confirm("ログイン中のすべての端末（iPadなど）をログアウトします。よろしいですか？")) post({logout_all:true},"すべての端末をログアウトしました。"); }}>すべてログアウト</button>}
+        </div>
+        {msg&&<div style={{fontSize:13,color:"var(--pri)"}}>{msg}</div>}
+      </div>
+    </div>
+  );
+}
+
 function ShareKeySetting(){
   const [key,setKey]=useState(""); const [saved,setSaved]=useState(null); const [msg,setMsg]=useState("");
   useEffect(()=>{ fetch("/api/share-config",{cache:"no-store"}).then(r=>r.json()).then(j=>{setSaved(!!j.key);}).catch(()=>setSaved(false)); },[]);
@@ -1664,19 +1751,32 @@ function ShiftApp() {
       if(c) setCellData(c);
     }
     setDbStatus("loading");
-    Promise.all([
-      dbLoad("staff"),
-      dbLoad("globalTemplates"),
-      dbLoad("cellData"),
-    ]).then(([s,g,c])=>{
-      if (s) setStaff(s);
-      if (g) setGlobalTemplates(g);
-      if (c) setCellData(c);
+    pullRemote(["staff","globalTemplates","cellData"]).then(()=>{
       setDbStatus("ok");
     }).catch(()=>{
       applyLocal();
       setDbStatus("offline");
     });
+  },[]);
+
+  // サーバーの最新内容を読み込んで画面に反映（読み込んだ内容は「保存済み」扱い）
+  const SETTERS={staff:setStaff,globalTemplates:setGlobalTemplates,cellData:setCellData};
+  async function pullRemote(keys){
+    const vals=await Promise.all(keys.map(k=>dbLoad(k)));
+    keys.forEach((k,i)=>{ if(vals[i]!==null) SETTERS[k](vals[i]); });
+  }
+
+  // 他の端末（PC・iPad）での変更を15秒ごとに確認して取り込む
+  useEffect(()=>{
+    const t=setInterval(async()=>{
+      if(saveTimer.current||document.hidden) return;   // 自分の保存待ちがある間は待つ
+      try{
+        const revs=await dbRevs();
+        const changed=Object.keys(SETTERS).filter(k=>(revs[k]||0)!==(REVS[k]||0));
+        if(changed.length) await pullRemote(changed);
+      }catch(e){}
+    },15000);
+    return ()=>clearInterval(t);
   },[]);
 
   // 変更を自動保存（1秒デバウンス）
@@ -1685,12 +1785,21 @@ function ShiftApp() {
     if (saveTimer.current) clearTimeout(saveTimer.current);
     setDbStatus("saving");
     saveTimer.current = setTimeout(async ()=>{
+      saveTimer.current = null;
+      const keys=["staff","globalTemplates","cellData"];
       const results = await Promise.all([
         dbSave("staff", staff),
         dbSave("globalTemplates", globalTemplates),
         dbSave("cellData", cellData),
       ]);
-      setDbStatus(results.every(Boolean) ? "ok" : "error");
+      const conflicted=keys.filter((k,i)=>results[i]==="conflict");
+      if(conflicted.length){
+        try{ await pullRemote(conflicted); }catch(e){}
+        alert("別の端末（PCまたはiPad）で先に変更されていたため、最新の内容を読み込みました。\n直前に行った変更が反映されていない場合は、もう一度行ってください。");
+        setDbStatus("ok");
+        return;
+      }
+      setDbStatus(results.includes("error") ? "error" : "ok");
     }, 1200);
   },[staff,globalTemplates,cellData]);
 
@@ -3292,6 +3401,8 @@ ${pw.innerHTML}
                   <div style={{marginTop:10}}><a className="btn sec" href="/import">バックアップから読み込む</a></div>
                 </div>
               </div>
+
+              <LanSetting/>
 
               <ShareKeySetting/>
 
