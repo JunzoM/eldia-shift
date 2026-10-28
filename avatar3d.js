@@ -46,7 +46,7 @@
 
   // ---------- 頭の形 ----------
   var FACES = {
-    round:  { wx: 1.00, jaw: 0.16, chin: 1.00, cheek: 0.07 },
+    round:  { wx: 1.00, jaw: 0.06, chin: 0.98, cheek: 0.11 },
     oval:   { wx: 0.94, jaw: 0.22, chin: 1.10, cheek: 0.03 },
     square: { wx: 1.00, jaw: 0.02, chin: 0.97, cheek: 0.05, square: true },
     heart:  { wx: 0.98, jaw: 0.38, chin: 1.08, cheek: 0.02 },
@@ -168,7 +168,10 @@
       var p;
       switch (kind) {
         case "closed":
-          c.strokeStyle = shade(lip, -0.25); c.lineWidth = 6; c.beginPath(); c.moveTo(-26, -2); c.quadraticCurveTo(0, 20, 26, -2); c.stroke();
+          var lg = c.createLinearGradient(0, 2, 0, 14); lg.addColorStop(0, shade(lip, 0.2)); lg.addColorStop(1, shade(lip, 0.5));
+          c.globalAlpha = 0.6; c.fillStyle = lg; c.beginPath(); c.moveTo(-16, 4); c.quadraticCurveTo(0, 17, 16, 4); c.quadraticCurveTo(0, 8, -16, 4); c.fill(); c.globalAlpha = 1;
+          c.strokeStyle = shade(lip, -0.35); c.lineWidth = 3.2; c.beginPath(); c.moveTo(-22, -3); c.quadraticCurveTo(-10, 4, 0, 4); c.quadraticCurveTo(10, 4, 22, -3); c.stroke();
+          c.lineWidth = 2; c.beginPath(); c.moveTo(-24, -5); c.lineTo(-21, -1); c.moveTo(24, -5); c.lineTo(21, -1); c.stroke();
           break;
         case "grin":
           p = new Path2D("M-34 -8 Q0 40 34 -8 Q0 4 -34 -8Z");
@@ -207,7 +210,7 @@
     return canvasTex(256, 128, function (c) {
       [64, 192].forEach(function (x) {
         var g = c.createRadialGradient(x, 64, 0, x, 64, 60);
-        g.addColorStop(0, "rgba(255,105,125,.55)"); g.addColorStop(1, "rgba(255,105,125,0)");
+        g.addColorStop(0, "rgba(240,110,110,.32)"); g.addColorStop(1, "rgba(240,110,110,0)");
         c.fillStyle = g; c.fillRect(0, 0, 256, 128);
       });
     });
@@ -220,12 +223,42 @@
       });
     });
   }
+  // 胸元（x: -0.8〜0.8、y: -1.28〜-2.28 の範囲）に描く
   function suitTex(color) {
-    return canvasTex(256, 256, function (c) {
-      c.fillStyle = "#F7F7F7"; c.beginPath(); c.moveTo(78, 0); c.lineTo(128, 140); c.lineTo(178, 0); c.fill();
-      c.fillStyle = "#C23B2A"; c.beginPath(); c.moveTo(118, 18); c.lineTo(138, 18); c.lineTo(146, 150); c.lineTo(128, 172); c.lineTo(110, 150); c.fill();
-      c.fillStyle = "#9C2A1C"; c.fillRect(116, 4, 24, 16);
-      c.strokeStyle = shade(color, -0.45); c.lineWidth = 5; c.beginPath(); c.moveTo(78, 0); c.lineTo(128, 140); c.lineTo(178, 0); c.stroke();
+    return canvasTex(1024, 640, function (c) {
+      c.scale(640, 640); c.translate(0.8, 0);
+      var Y = function (y) { return -1.28 - y; };
+      function path(pts) { c.beginPath(); pts.forEach(function (p, i) { if (i) c.lineTo(p[0], Y(p[1])); else c.moveTo(p[0], Y(p[1])); }); c.closePath(); }
+      var dk = shade(color, -0.4), lt = shade(color, 0.08);
+      c.lineJoin = "round";
+      // シャツ
+      var sg = c.createLinearGradient(0, 0, 0, 0.75); sg.addColorStop(0, "#FFFFFF"); sg.addColorStop(1, "#DDE3EA");
+      path([[-0.38, -1.28], [0.38, -1.28], [0.24, -1.62], [0, -2.02], [-0.24, -1.62]]); c.fillStyle = sg; c.fill();
+      // ネクタイ（結び目と剣先）
+      [[[-0.055, -1.37], [0.055, -1.37], [0.042, -1.48], [-0.042, -1.48]],
+       [[-0.042, -1.48], [0.042, -1.48], [0.1, -2.06], [0, -2.17], [-0.1, -2.06]]].forEach(function (pts, k) {
+        c.save(); path(pts); c.fillStyle = k ? "#1F3A6E" : "#1A3260"; c.fill(); c.clip();
+        for (var x = -0.4; x < 0.4; x += 0.075) {
+          c.strokeStyle = "#5D86CC"; c.lineWidth = 0.022; c.beginPath(); c.moveTo(x, Y(-1.3)); c.lineTo(x + 0.55, Y(-2.2)); c.stroke();
+          c.strokeStyle = "#DDE7F7"; c.lineWidth = 0.006; c.beginPath(); c.moveTo(x + 0.025, Y(-1.3)); c.lineTo(x + 0.575, Y(-2.2)); c.stroke();
+        }
+        c.restore();
+      });
+      // シャツの襟
+      [-1, 1].forEach(function (d) {
+        c.save(); c.shadowColor = "rgba(0,0,0,.25)"; c.shadowBlur = 8; c.shadowOffsetY = 3;
+        path([[d * 0.39, -1.28], [d * 0.05, -1.38], [d * 0.17, -1.58], [d * 0.37, -1.44]]); c.fillStyle = "#FBFCFD"; c.fill();
+        c.restore(); c.strokeStyle = "#C3CBD5"; c.lineWidth = 0.005; c.stroke();
+      });
+      // 上着の襟（ノッチドラペル）
+      [-1, 1].forEach(function (d) {
+        c.save(); c.shadowColor = "rgba(0,0,0,.4)"; c.shadowBlur = 14; c.shadowOffsetX = -d * 5;
+        path([[d * 0.39, -1.28], [d * 0.52, -1.32], [d * 0.5, -1.55], [d * 0.57, -1.58], [d * 0.27, -2.06], [d * 0.01, -2.04], [d * 0.24, -1.63]]);
+        var g = c.createLinearGradient(d * 0.24, 0, d * 0.55, 0); g.addColorStop(0, lt); g.addColorStop(1, color);
+        c.fillStyle = g; c.fill(); c.restore();
+        c.strokeStyle = dk; c.lineWidth = 0.008; c.stroke();
+      });
+      c.strokeStyle = dk; c.lineWidth = 0.008; c.beginPath(); c.moveTo(0.01, Y(-2.04)); c.lineTo(0.01, Y(-2.3)); c.stroke();
     });
   }
   function vneckTex(skin, color) {
@@ -257,8 +290,8 @@
     r.setPixelRatio(1);
     r.setSize(size, size, false);
     r.outputEncoding = T.sRGBEncoding;
-    r.toneMapping = T.ACESFilmicToneMapping;
-    r.toneMappingExposure = 0.95;
+    r.toneMapping = T.LinearToneMapping;   // ACES だと肌の色が抜けるので素直な変換にする
+    r.toneMappingExposure = 0.72;
     r.shadowMap.enabled = true;
     r.shadowMap.type = T.PCFSoftShadowMap;
     return r;
@@ -295,8 +328,8 @@
     function mesh(g, m, parent) { var x = new T.Mesh(g, m); x.castShadow = true; x.receiveShadow = true; (parent || head).add(x); return x; }
 
     var skinM = std(s.skin, 0.55, { sheen: 0.35, sheenRoughness: 0.5, sheenColor: new T.Color("#ff8c78") });
-    var hairM = std(s.hairColor, 0.45, { sheen: 0.25, sheenRoughness: 0.35, sheenColor: new T.Color(shade(s.hairColor, 0.35)), clearcoat: 0.3, clearcoatRoughness: 0.35 });
-    var hairDarkM = std(shade(s.hairColor, -0.1), 0.6);
+    var hairM = std(s.hairColor, 0.4, { sheen: 0.3, sheenRoughness: 0.3, sheenColor: new T.Color(shade(s.hairColor, 0.4)), clearcoat: 0.45, clearcoatRoughness: 0.3 });
+    var hairDarkM = std(shade(s.hairColor, -0.25), 0.7);
     var clothM = std(s.clothesColor, 0.8, { sheen: 0.4, sheenRoughness: 0.8, sheenColor: new T.Color(shade(s.clothesColor, 0.3)) });
     var hatM = std(s.hatColor, 0.65, { sheen: 0.6, sheenColor: new T.Color(shade(s.hatColor, 0.4)) });
 
@@ -337,27 +370,31 @@
     var hairDef = HAIR[s.hair] || HAIR.none;
     if (!hairDef.coverEars) [-1, 1].forEach(function (d) {
       var c = headPos(V(d, -0.08, -0.06).normalize(), f);
-      var ear = mesh(new T.SphereGeometry(1, 32, 24), skinM); ear.scale.set(0.09, 0.2, 0.14); ear.position.set(c.x + d * 0.02, c.y, c.z); ear.rotation.y = d * 0.35;
+      var ear = mesh(new T.SphereGeometry(1, 32, 24), skinM); ear.scale.set(0.1, 0.22, 0.15); ear.position.set(c.x + d * 0.02, c.y, c.z); ear.rotation.y = d * 0.35;
       var inner = mesh(new T.SphereGeometry(1, 24, 16), std(shade(s.skin, -0.12), 0.6)); inner.scale.set(0.04, 0.13, 0.08); inner.position.set(c.x + d * 0.08, c.y, c.z + 0.02); inner.rotation.y = d * 0.35;
       head.userData["ear" + d] = V(c.x + d * 0.06, c.y - 0.17, c.z + 0.03);
     });
     else [-1, 1].forEach(function (d) { var c = headPos(V(d, -0.08, -0.06).normalize(), f); head.userData["ear" + d] = V(c.x + d * 0.05, c.y - 0.17, c.z + 0.03); });
 
     // 鼻
-    var ns = { small: [0.1, 0.075, 0.09], round: [0.13, 0.1, 0.11], tall: [0.085, 0.13, 0.12], wide: [0.15, 0.075, 0.085], dot: [0.06, 0.05, 0.05] }[s.nose] || [0.1, 0.075, 0.09];
+    var ns = { small: [0.12, 0.09, 0.1], round: [0.13, 0.1, 0.11], tall: [0.085, 0.13, 0.12], wide: [0.15, 0.075, 0.085], dot: [0.06, 0.05, 0.05] }[s.nose] || [0.12, 0.09, 0.1];
     var np = surf(0, -0.33);
     var nose = mesh(new T.SphereGeometry(1, 32, 24), skinM); nose.scale.set(ns[0], ns[1], ns[2]); nose.position.copy(np.p).add(V(0, s.nose === "tall" ? 0.03 : 0, -ns[2] * 0.25));
+    if (s.nose !== "dot") {
+      [-1, 1].forEach(function (d) { var al = mesh(new T.SphereGeometry(1, 24, 16), skinM); al.scale.set(ns[0] * 0.55, ns[1] * 0.62, ns[2] * 0.6); al.position.copy(nose.position).add(V(d * ns[0] * 0.78, -ns[1] * 0.3, -ns[2] * 0.4)); });
+      var bridge = mesh(new T.SphereGeometry(1, 24, 16), skinM); bridge.scale.set(0.055, s.nose === "tall" ? 0.2 : 0.15, 0.06); bridge.position.copy(surf(0, -0.19).p).add(V(0, 0, -0.035));
+    }
 
     // 目
     var eyeR = s.eyes === "big" ? 0.25 : 0.23, EX = 0.39, EYY = -0.06;
     var irisT = irisTex(s.eyeColor, s.eyes);
     var eyeM = M({ map: irisT, roughness: 0.08, clearcoat: 1, clearcoatRoughness: 0.03, envMapIntensity: 1.2 });
     var lashM = std("#1E1410", 0.5);
-    var lidOpen = { normal: -0.8, big: -0.85, lashes: -0.8, sleepy: -0.25, smile: 0.62, wink: -0.8, surprise: -1.05, line: 0.42 }[s.eyes];
-    if (lidOpen == null) lidOpen = -0.8;
+    var lidOpen = { normal: -0.92, big: -0.95, lashes: -0.92, sleepy: -0.3, smile: 0.62, wink: -0.92, surprise: -1.1, line: 0.42 }[s.eyes];
+    if (lidOpen == null) lidOpen = -0.92;
     var eyes = [];
     [-1, 1].forEach(function (d) {
-      var sp = surf(d * EX, EYY), c = V(d * EX, EYY, sp.p.z - eyeR * 0.45);
+      var sp = surf(d * EX, EYY), c = V(d * EX, EYY, sp.p.z - eyeR * 0.6);
       var g = new T.Group(); g.position.copy(c); head.add(g);
       var ball = mesh(new T.SphereGeometry(eyeR, 48, 32), eyeM, g);
       ball.rotation.y = d * 0.12;
@@ -376,9 +413,9 @@
         l.position.set(Math.cos(ang) * lashR, lashY + 0.04, Math.sin(ang) * lashR); l.rotation.z = -d * (0.6 + i * 0.2); l.rotation.x = 0.3;
       });
       // 下まぶた
-      var low = new T.Group(); g.add(low);
-      mesh(new T.SphereGeometry(eyeR * 1.03, 48, 16, 0, Math.PI * 2, 0, 0.75), skinM, low);
-      low.rotation.x = Math.PI + (s.eyes === "smile" ? -0.55 : 0.35);
+      var low = new T.Group(); if (s.eyes === "smile" || s.eyes === "sleepy") g.add(low);
+      mesh(new T.SphereGeometry(eyeR * 1.03, 48, 16, 0, Math.PI * 2, 0, 0.62), skinM, low);
+      low.rotation.x = Math.PI + (s.eyes === "smile" ? -0.6 : 0.45);
       var open = (s.eyes === "wink" && d > 0) ? 0.62 : lidOpen;
       lidG.rotation.x = open;
       eyes.push({ group: g, ball: ball, lid: lidG, open: open });
@@ -387,7 +424,7 @@
     // 眉
     var BR = { natural: [[-17, 4], [-2, -5], [17, -1]], thick: [[-18, 4], [-2, -6], [18, 0]], thin: [[-16, 3], [-2, -5], [16, -1]],
       straight: [[-17, 1], [0, 0], [17, 0]], angry: [[-17, -5], [0, 0], [17, 6]], worried: [[-17, 4], [0, 2], [16, -7]] }[s.brows] || [[-17, 4], [-2, -5], [17, -1]];
-    var bw = { thick: 0.042, thin: 0.018, natural: 0.03, straight: 0.032, angry: 0.034, worried: 0.03 }[s.brows] || 0.03;
+    var bw = { thick: 0.05, thin: 0.02, natural: 0.038, straight: 0.04, angry: 0.04, worried: 0.036 }[s.brows] || 0.038;
     var browY = (s.eyes === "surprise" || s.eyes === "big") ? 0.32 : 0.28;
     var browM = std(s.hair === "none" ? shade(s.skin, -0.45) : shade(s.hairColor, s.hairColor.toUpperCase() === "#F2F2F2" ? -0.25 : -0.1), 0.6);
     [-1, 1].forEach(function (d) {
@@ -511,7 +548,10 @@
 
     // 首と体
     var neck = mesh(new T.CylinderGeometry(0.34, 0.38, 0.9, 32), skinM, body); neck.position.set(0, -1.3, -0.12);
-    var torsoG = new T.SphereGeometry(1, 64, 40); var torso = mesh(torsoG, clothM, body); torso.scale.set(1.45, 0.85, 0.75); torso.position.set(0, -2.12, -0.12);
+    var torsoG = new T.SphereGeometry(1, 64, 40), tq = torsoG.attributes.position;
+    for (var ti = 0; ti < tq.count; ti++) { var ty = tq.getY(ti); if (ty > 0) tq.setY(ti, ty * (1 - 0.3 * ss(0.25, 0.85, Math.abs(tq.getX(ti))))); }   // 肩を平らに
+    torsoG.computeVertexNormals();
+    var torso = mesh(torsoG, clothM, body); torso.scale.set(1.5, 0.88, 0.75); torso.position.set(0, -2.12, -0.12);
     torso.updateMatrixWorld(true); body.updateMatrixWorld(true);
     switch (s.clothes) {
       case "tee": { var col = mesh(new T.TorusGeometry(0.4, 0.045, 12, 48), std(shade(s.clothesColor, -0.15), 0.8), body); col.rotation.x = Math.PI / 2 + 0.2; col.position.set(0, -1.32, -0.08); break; }
@@ -539,7 +579,11 @@
         var tt = mesh(new T.TorusGeometry(0.44, 0.06, 12, 48), clothM, body); tt.rotation.x = Math.PI / 2; tt.position.set(0, -0.95, -0.1);
         break;
       }
-      case "suit": decal(suitTex(s.clothesColor), conformPlane(torso, 0, -1.62, 0.7, 0.7, 0.01, 16, 16), body, 0.6); break;
+      case "suit": {
+        decal(suitTex(s.clothesColor), conformPlane(torso, 0, -1.78, 1.6, 1.0, 0.012, 48, 30), body, 0.6);
+        var sc = mesh(new T.TorusGeometry(0.37, 0.04, 12, 48), std("#FAFBFC", 0.6), body); sc.rotation.x = Math.PI / 2 + 0.2; sc.position.set(0, -1.27, -0.08);
+        break;
+      }
     }
 
     probe.geometry.dispose(); probe.material.dispose();
@@ -557,16 +601,74 @@
       c.quaternion.setFromUnitVectors(V(0, 1, 0), dir.add(V(0, 0.6, 0)).normalize());
     });
   }
+  // 根元から毛先へ細くなる、少し平たい毛束
+  function lockGeo(pts, r, flat) {
+    var curve = new T.CatmullRomCurve3(pts), segs = pts.length * 3, rad = 8;
+    var g = new T.TubeGeometry(curve, segs, r, rad, false), p = g.attributes.position, c = new T.Vector3(), v = new T.Vector3(), nn = new T.Vector3();
+    for (var i = 0; i <= segs; i++) {
+      var u = i / segs, prof = 0.2 + 0.8 * ss(0, 0.2, u) * (1 - 0.55 * ss(0.45, 1, u)) - 0.15 * ss(0.92, 1, u);
+      curve.getPointAt(u, c); nn.copy(c).normalize();
+      for (var j = 0; j <= rad; j++) {
+        var k = i * (rad + 1) + j;
+        v.fromBufferAttribute(p, k).sub(c);
+        v.addScaledVector(nn, -v.dot(nn) * (1 - flat)).multiplyScalar(prof);
+        p.setXYZ(k, c.x + v.x, c.y + v.y, c.z + v.z);
+      }
+    }
+    g.computeVertexNormals();
+    return g;
+  }
+  function mergeGeos(list) {
+    var pos = [], nor = [], idx = [], off = 0;
+    list.forEach(function (g) {
+      pos.push.apply(pos, g.attributes.position.array); nor.push.apply(nor, g.attributes.normal.array);
+      g.index.array.forEach(function (i) { idx.push(i + off); });
+      off += g.attributes.position.count; g.dispose();
+    });
+    var m = new T.BufferGeometry();
+    m.setAttribute("position", new T.Float32BufferAttribute(pos, 3)); m.setAttribute("normal", new T.Float32BufferAttribute(nor, 3)); m.setIndex(idx);
+    return m;
+  }
+  // つむじ・分け目（o.src）から外へ流れる毛束を、髪の範囲（mask）いっぱいに並べる
+  function locks(ctx, f, mask, thick, o) {
+    var src = o.src.clone().normalize(), list = [], seeds = fib(o.count * 5).filter(function (n) { return mask(n) > 0.05; });
+    var stride = Math.max(1, Math.floor(seeds.length / o.count)), tmp = new T.Vector3();
+    function flow(n, sign) {
+      var d = n.clone().multiplyScalar(n.dot(src)).sub(src);             // つむじから離れる向き
+      if (d.lengthSq() < 1e-6) d.set(1, 0, 0);
+      d.normalize().multiplyScalar(sign);
+      tmp.set(0, -1, 0).addScaledVector(n, n.y); d.addScaledVector(tmp, (o.gravity || 0) * sign);
+      if (o.curl) d.addScaledVector(new T.Vector3().crossVectors(n, d), o.curl);
+      return d.normalize();
+    }
+    for (var si = 0; si < seeds.length; si += stride) {
+      var n = seeds[si].clone(), k, pts = [];
+      for (k = 0; k < o.back; k++) { var b = n.clone().addScaledVector(flow(n, -1), o.step).normalize(); if (mask(b) < 0.03) break; n = b; }
+      for (k = 0; k < o.steps; k++) {
+        if (mask(n) < 0) break;
+        var u = k / o.steps;
+        pts.push(headPos(n, f).multiplyScalar(1 + thick + 0.01 + o.lift * Math.sin(Math.PI * Math.min(1, u * 1.15))));
+        n.addScaledVector(flow(n, 1), o.step).normalize();
+      }
+      if (pts.length < 4) continue;
+      list.push(lockGeo(pts, o.r * (0.8 + 0.45 * ((si * 7919) % 13) / 13), o.flat || 0.55));
+    }
+    if (list.length) ctx.mesh(mergeGeos(list), ctx.hairM);
+  }
   function tie(ctx, p, r) { var t = ctx.mesh(new T.TorusGeometry(r, 0.035, 10, 24), ctx.std("#E8669F", 0.4)); t.position.copy(p); return t; }
 
   var HAIR = {
     none: { make: function () {} },
     buzz: { make: function (f, c) { c.mesh(shellGeo(f, hairMask(0.48, 0.05, -0.5), 0.012, { soft: 0.06 }), c.std(c.s.hairColor, 0.9, { transparent: true, opacity: 0.82 })); } },
-    short: { make: function (f, c) { c.mesh(shellGeo(f, hairMask(0.48, 0.0, -0.55), c.hatOn ? 0.03 : 0.07, { ridge: 0.014, ridgeN: 20, bump: function (n) { return c.hatOn ? 0 : 0.06 * ss(0.2, 1, n.y); } }), c.hairM); } },
+    short: { make: function (f, c) {
+      var mk = hairMask(0.55, 0.0, -0.55);
+      c.mesh(shellGeo(f, mk, c.hatOn ? 0.03 : 0.05, { bump: function (n) { return c.hatOn ? 0 : 0.05 * ss(0.2, 1, n.y); } }), c.hatOn ? c.hairM : c.hairDarkM);
+      if (!c.hatOn) locks(c, f, mk, 0.05, { src: V(0.1, 0.2, 0.97), count: 70, steps: 15, back: 5, step: 0.1, r: 0.115, lift: 0.08, gravity: 0, curl: 0.06 });
+    } },
     side: { make: function (f, c) {
-      var L = line3(0.4, -0.02, -0.55);
-      c.mesh(shellGeo(f, function (n) { return n.y - L(n) - (n.z > 0 ? 0.16 * n.x * n.z : 0); }, c.hatOn ? 0.03 : 0.08, { ridge: 0.014, ridgeN: 18,
-        bump: function (n) { return 0.05 * ss(0.3, 0.9, n.y) * ss(-0.2, 0.6, n.z); } }), c.hairM);
+      var L = line3(0.56, 0.0, -0.55), mk = function (n) { return n.y - L(n) - (n.z > 0 ? 0.1 * n.x * n.z : 0); };
+      c.mesh(shellGeo(f, mk, c.hatOn ? 0.03 : 0.06, { bump: function (n) { return c.hatOn ? 0 : 0.06 * ss(0.3, 0.9, n.y) * ss(-0.2, 0.6, n.z); } }), c.hatOn ? c.hairM : c.hairDarkM);
+      if (!c.hatOn) locks(c, f, mk, 0.06, { src: V(-0.3, 0.25, 0.92), count: 70, steps: 17, back: 5, step: 0.1, r: 0.13, lift: 0.15, gravity: 0, curl: 0.12 });
     } },
     spiky: { make: function (f, c) {
       var mk = hairMask(0.45, 0.0, -0.55);
@@ -574,20 +676,28 @@
       if (!c.hatOn) cones(c, f, fib(56).filter(function (n) { return n.y > 0.25; }), mk, 0.05, [0.16, 0.34]);
     } },
     bangs: { coverEars: true, make: function (f, c) {
-      c.mesh(shellGeo(f, hairMask(0.24, -0.45, -0.6), c.hatOn ? 0.04 : 0.08, { soft: 0.025, ridge: 0.02, ridgeN: 22 }), c.hairM);
+      var mk = hairMask(0.24, -0.45, -0.6);
+      c.mesh(shellGeo(f, mk, c.hatOn ? 0.04 : 0.08, { soft: 0.025, ridge: 0.02, ridgeN: 22 }), c.hairM);
+      if (!c.hatOn) locks(c, f, mk, 0.08, { src: V(0, 0.8, -0.55), count: 60, steps: 16, back: 2, step: 0.1, r: 0.075, lift: 0.025, gravity: 0.2, flat: 0.45 });
       c.mesh(curtainGeo(f, 0.25, -0.98, 1.08, 1.05, 0.1), c.hairM);
     } },
     long: { coverEars: true, make: function (f, c) {
       var L = line3(0.5, -0.3, -0.6);
-      c.mesh(shellGeo(f, function (n) { return n.y - L(n); }, c.hatOn ? 0.04 : 0.08, { ridge: 0.02, ridgeN: 16 }), c.hairM);
+      var mk = function (n) { return n.y - L(n); };
+      c.mesh(shellGeo(f, mk, c.hatOn ? 0.04 : 0.08, { ridge: 0.02, ridgeN: 16 }), c.hairM);
+      if (!c.hatOn) locks(c, f, mk, 0.08, { src: V(0, 0.95, 0.3), count: 60, steps: 14, back: 1, step: 0.11, r: 0.075, lift: 0.02, gravity: 0.4, flat: 0.45 });
       c.mesh(curtainGeo(f, 0.35, -2.05, 1.04, 0.95, 0.14), c.hairM);
     } },
     bun: { make: function (f, c) {
-      c.mesh(shellGeo(f, hairMask(0.5, 0.02, -0.5), 0.035, { ridge: 0.015 }), c.hairM);
+      var mk = hairMask(0.5, 0.02, -0.5);
+      c.mesh(shellGeo(f, mk, 0.035, { ridge: 0.015 }), c.hairM);
+      if (!c.hatOn) locks(c, f, mk, 0.035, { src: V(0, 0.75, -0.65), count: 55, steps: 16, back: 0, step: 0.1, r: 0.06, lift: 0.012, flat: 0.4 });
       if (!c.hatOn) { var b = c.mesh(new T.SphereGeometry(0.36, 48, 32), c.hairM); b.position.set(0, 1.22, -0.25); b.scale.set(1, 0.9, 1); tie(c, V(0, 0.95, -0.2), 0.22).rotation.x = Math.PI / 2 - 0.2; }
     } },
     twin: { make: function (f, c) {
-      c.mesh(shellGeo(f, hairMask(0.26, -0.1, -0.55), c.hatOn ? 0.03 : 0.07, { soft: 0.03, ridge: 0.02, ridgeN: 22 }), c.hairM);
+      var mk = hairMask(0.26, -0.1, -0.55);
+      c.mesh(shellGeo(f, mk, c.hatOn ? 0.03 : 0.07, { soft: 0.03, ridge: 0.02, ridgeN: 22 }), c.hairM);
+      if (!c.hatOn) locks(c, f, mk, 0.07, { src: V(0, 0.85, -0.45), count: 55, steps: 15, back: 2, step: 0.1, r: 0.07, lift: 0.02, gravity: 0.2, flat: 0.45 });
       [-1, 1].forEach(function (d) {
         var t = c.mesh(new T.CapsuleGeometry(0.19, 0.8, 12, 24), c.hairM); t.position.set(d * 1.12 * f.wx, -0.25, -0.25); t.rotation.z = d * 0.25;
         var tp = t.geometry.attributes.position; for (var i = 0; i < tp.count; i++) { var y = tp.getY(i), k = 1 - 0.25 * ss(-0.6, 0.6, -y) + 0.15 * ss(0.2, 0.6, y); tp.setXYZ(i, tp.getX(i) * k, y, tp.getZ(i) * k); } t.geometry.computeVertexNormals();
@@ -595,7 +705,9 @@
       });
     } },
     pony: { make: function (f, c) {
-      c.mesh(shellGeo(f, hairMask(0.5, 0.02, -0.5), 0.04, { ridge: 0.02 }), c.hairM);
+      var mk = hairMask(0.5, 0.02, -0.5);
+      c.mesh(shellGeo(f, mk, 0.04, { ridge: 0.02 }), c.hairM);
+      if (!c.hatOn) locks(c, f, mk, 0.04, { src: V(0, 0.3, -0.95), count: 55, steps: 18, back: 0, step: 0.1, r: 0.06, lift: 0.012, flat: 0.4 });
       var p = c.mesh(new T.CapsuleGeometry(0.2, 0.9, 12, 24), c.hairM); p.position.set(0, 0.0, -1.18); p.rotation.x = -0.35;
       var tp = p.geometry.attributes.position; for (var i = 0; i < tp.count; i++) { var y = tp.getY(i), k = 1 - 0.4 * ss(-0.2, -0.65, y); tp.setXYZ(i, tp.getX(i) * k, y, tp.getZ(i) * k); } p.geometry.computeVertexNormals();
       var t = tie(c, V(0, 0.5, -1.02), 0.13); t.rotation.x = Math.PI / 2 - 0.4;
