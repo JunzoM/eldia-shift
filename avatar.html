@@ -135,25 +135,27 @@ button,input{font-family:inherit}
   }
 
   // ---------- パーツ定義 ----------
-  var SKINS = ["#FFE3CC", "#F9D2B3", "#F1C09A", "#E2A97E", "#C98C5E", "#A86D45", "#7D4B2C", "#57331F", "#BFE3F7", "#D9C8F5"];
+  var SKINS = ["#FFE6D2", "#F6CBA6", "#EDBA92", "#E0A67C", "#C98C5E", "#A86D45", "#7D4B2C", "#57331F", "#BFE3F7", "#D9C8F5"];
   var HAIR_COLORS = ["#1C1714", "#3B2A20", "#6B4A2F", "#A0703F", "#D9B26A", "#ECDDB4", "#A63A22", "#8E8E8E", "#F2F2F2", "#E8669F", "#4A7BD8", "#7A4FD0", "#3FA37A"];
   var EYE_COLORS = ["#3B2618", "#6B4423", "#8A6A2B", "#2F6FA8", "#3C8A5A", "#6F7782", "#8E3FA6"];
-  var LIP_COLORS = ["#B5524A", "#D9677A", "#C2253A", "#9C3D5E", "#8A5240"];
+  var LIP_COLORS = ["#C9535E", "#B5524A", "#E07A8C", "#C2253A", "#9C3D5E", "#8A5240"];
   var GLASSES_COLORS = ["#222222", "#7A4B2A", "#C9A227", "#C23B2A", "#1F5E8A", "#E8669F", "#BBBBBB"];
   var HAT_COLORS = ["#1F5E8A", "#C23B2A", "#2D7A52", "#F2B233", "#222222", "#F2F2F2", "#E8669F", "#7A4FD0"];
   var CLOTHES_COLORS = ["#1F5E8A", "#2B3440", "#F2F2F2", "#C23B2A", "#2D7A52", "#F2B233", "#E8669F", "#7A4FD0", "#8A6A4B", "#4FB0C6"];
   var BG_COLORS = ["#CFE3F2", "#FAD9DF", "#FBE8B8", "#D4EDD9", "#E2D9F5", "#F5E0CC", "#DDE2E8", "#2B3440", "transparent"];
 
   var FACES = {
-    round:  { label: "まる",     w: 108, top: 70, chin: 300, jaw: 0.58, k: 0.62 },
-    oval:   { label: "たまご",   w: 100, top: 66, chin: 308, jaw: 0.50, k: 0.62 },
-    square: { label: "しかく",   w: 106, top: 70, chin: 298, jaw: 0.84, k: 0.78 },
-    heart:  { label: "シャープ", w: 104, top: 70, chin: 306, jaw: 0.26, k: 0.50 },
-    wide:   { label: "ふっくら", w: 116, top: 74, chin: 296, jaw: 0.66, k: 0.66 }
+    round:  { label: "まる",     w: 112, top: 66, chin: 302, jaw: 0.66, k: 0.68 },
+    oval:   { label: "たまご",   w: 104, top: 62, chin: 306, jaw: 0.58, k: 0.66 },
+    square: { label: "しかく",   w: 110, top: 66, chin: 300, jaw: 0.84, k: 0.78 },
+    heart:  { label: "シャープ", w: 108, top: 66, chin: 306, jaw: 0.38, k: 0.56 },
+    wide:   { label: "ふっくら", w: 120, top: 70, chin: 298, jaw: 0.74, k: 0.70 }
   };
   var SY = 185;   // 頭のいちばん幅が広い高さ
-  var EX = 40;    // 目の左右の間隔
-  var EY = 196;   // 目の高さ
+  var EX = 44;    // 目の左右の間隔
+  var EY = 210;   // 目の高さ（低めに置くと幼く可愛く見える）
+  var NY = 243;   // 鼻の高さ
+  var MY = 268;   // 口の高さ
 
   function headPath(f) {
     var w = f.w, t = f.top, c = f.chin, j = w * f.jaw, ky = SY - (SY - t) * 0.552, by = SY + (c - SY) * f.k;
@@ -268,12 +270,12 @@ button,input{font-family:inherit}
   };
 
   var BROWS = {
-    natural: { label: "ふつう", d: "M-20 4Q0 -8 20 0", sw: 7 },
-    thick:   { label: "太め",   d: "M-21 4Q0 -9 21 1", sw: 11 },
-    thin:    { label: "細め",   d: "M-19 3Q0 -8 19 0", sw: 4 },
-    straight:{ label: "まっすぐ", d: "M-20 1L20 0", sw: 7 },
-    angry:   { label: "キリッ", d: "M-20 -6L20 6", sw: 8 },
-    worried: { label: "こまり", d: "M-20 4Q0 2 18 -8", sw: 7 }
+    natural: { label: "ふつう", d: "M-17 4Q-2 -7 17 -1", sw: 5.5 },
+    thick:   { label: "太め",   d: "M-18 4Q-2 -8 18 0", sw: 9 },
+    thin:    { label: "細め",   d: "M-16 3Q-2 -7 16 -1", sw: 3.5 },
+    straight:{ label: "まっすぐ", d: "M-17 1L17 0", sw: 6 },
+    angry:   { label: "キリッ", d: "M-17 -5L17 6", sw: 6.5 },
+    worried: { label: "こまり", d: "M-17 4Q0 3 16 -7", sw: 5.5 }
   };
 
   var EYES = {
@@ -290,7 +292,7 @@ button,input{font-family:inherit}
   var NOSES = { small: { label: "小さめ" }, round: { label: "まるい" }, tall: { label: "高め" }, wide: { label: "ひろめ" }, dot: { label: "ちょん" } };
 
   var MOUTHS = {
-    smile: { label: "スマイル" }, grin: { label: "歯を見せる" }, laugh: { label: "大わらい" }, neutral: { label: "ふつう" },
+    smile: { label: "スマイル" }, closed: { label: "にこ" }, grin: { label: "歯を見せる" }, laugh: { label: "大わらい" }, neutral: { label: "ふつう" },
     o: { label: "おっ" }, tongue: { label: "べー" }, smirk: { label: "ニヤリ" }, cat: { label: "ω" }
   };
 
@@ -301,10 +303,10 @@ button,input{font-family:inherit}
   var CLOTHES = { tee: { label: "Tシャツ" }, vneck: { label: "Vネック" }, hoodie: { label: "パーカー" }, shirt: { label: "シャツ" }, turtle: { label: "タートル" }, suit: { label: "スーツ" } };
 
   var DEFAULT = {
-    face: "round", skin: "#F1C09A", blush: true, freckles: false,
-    hair: "short", hairColor: "#3B2A20", brows: "natural",
-    eyes: "normal", eyeColor: "#3B2618", nose: "small",
-    mouth: "smile", lip: "#B5524A", beard: "none",
+    face: "round", skin: "#F6CBA6", blush: true, freckles: false,
+    hair: "side", hairColor: "#4A3122", brows: "natural",
+    eyes: "normal", eyeColor: "#5A3A22", nose: "small",
+    mouth: "smile", lip: "#C9535E", beard: "none",
     glasses: "none", glassesColor: "#222222", hat: "none", hatColor: "#1F5E8A",
     earrings: "none", clothes: "tee", clothesColor: "#1F5E8A", bg: "#CFE3F2"
   };
@@ -313,51 +315,73 @@ button,input{font-family:inherit}
   var uidSeq = 0;
 
   function renderEye(s, kind, cx, mirror) {
-    var ink = "#2A1C14", out = "";
-    if (kind === "smile") return '<path d="M' + (cx - 15) + " " + (EY + 4) + "Q" + cx + " " + (EY - 12) + " " + (cx + 15) + " " + (EY + 4) + '" fill="none" stroke="' + ink + '" stroke-width="5" stroke-linecap="round"/>';
-    if (kind === "line") return '<path d="M' + (cx - 15) + " " + EY + "Q" + cx + " " + (EY + 6) + " " + (cx + 15) + " " + EY + '" fill="none" stroke="' + ink + '" stroke-width="5" stroke-linecap="round"/>';
-    var rx = 16, ry = 19, ir = 11.5, pr = 5.5;
-    if (kind === "big") { rx = 18; ry = 22; ir = 14; pr = 6.5; }
-    if (kind === "surprise") { rx = 18; ry = 22; ir = 8; pr = 3.5; }
-    var iris = s.eyeColor;
+    var ink = "#2B1A14", u = s._u, out = "", o = mirror ? 1 : -1;
+    var crease = '<path d="M' + (cx - 17) + " " + (EY - 25) + "Q" + cx + " " + (EY - 36) + " " + (cx + 17) + " " + (EY - 25) + '" fill="none" stroke="' + shade(s.skin, -0.3) + '" stroke-width="2" stroke-linecap="round" opacity=".45"/>';
+    if (kind === "smile") return '<path d="M' + (cx - 17) + " " + (EY + 4) + "Q" + cx + " " + (EY - 14) + " " + (cx + 17) + " " + (EY + 4) + '" fill="none" stroke="' + ink + '" stroke-width="5.5" stroke-linecap="round"/>' +
+      '<path d="M' + (cx + o * 16) + " " + (EY + 2) + "l" + o * 6 + ' -3" stroke="' + ink + '" stroke-width="3.5" stroke-linecap="round"/>';
+    if (kind === "line") return '<path d="M' + (cx - 16) + " " + (EY - 2) + "Q" + cx + " " + (EY + 7) + " " + (cx + 16) + " " + (EY - 2) + '" fill="none" stroke="' + ink + '" stroke-width="5" stroke-linecap="round"/>';
+    var rx = 19, ry = 23, ir = 15.5, pr = 7;
+    if (kind === "big") { rx = 21; ry = 26; ir = 17.5; pr = 7.5; }
+    if (kind === "surprise") { rx = 20; ry = 26; ir = 10; pr = 4; }
+    var id = u + "-e" + cx, top = EY - ry * 1.36;
+    out += crease;
     out += '<g class="av-blink">';
-    out += '<ellipse cx="' + cx + '" cy="' + EY + '" rx="' + rx + '" ry="' + ry + '" fill="#fff"/>';
-    out += '<g class="av-iris">';
-    out += '<circle cx="' + cx + '" cy="' + (EY + 2) + '" r="' + ir + '" fill="url(#' + s._u + '-iris)"/>';
-    out += '<circle cx="' + cx + '" cy="' + (EY + 2) + '" r="' + pr + '" fill="#120C08"/>';
-    out += '<circle cx="' + (cx - ir * 0.38) + '" cy="' + (EY - ir * 0.35) + '" r="' + (kind === "big" ? 4.5 : 3.6) + '" fill="#fff"/>';
-    out += '<circle cx="' + (cx + ir * 0.4) + '" cy="' + (EY + ir * 0.45) + '" r="' + (kind === "big" ? 2.4 : 1.6) + '" fill="#fff" opacity=".85"/>';
+    out += '<clipPath id="' + id + '"><ellipse cx="' + cx + '" cy="' + EY + '" rx="' + rx + '" ry="' + ry + '"/></clipPath>';
+    out += '<ellipse cx="' + cx + '" cy="' + EY + '" rx="' + rx + '" ry="' + ry + '" fill="url(#' + u + '-white)"/>';
+    out += '<g clip-path="url(#' + id + ')"><g class="av-iris">';
+    out += '<circle cx="' + cx + '" cy="' + (EY + 3) + '" r="' + ir + '" fill="url(#' + u + '-iris)" stroke="' + shade(s.eyeColor, -0.45) + '" stroke-width="1.5"/>';
+    out += '<circle cx="' + cx + '" cy="' + (EY + 3) + '" r="' + pr + '" fill="#110A06"/>';
+    out += '<ellipse cx="' + (cx - ir * 0.36) + '" cy="' + (EY - ir * 0.32) + '" rx="' + (kind === "big" ? 6 : 5) + '" ry="' + (kind === "big" ? 7 : 5.8) + '" fill="#fff"/>';
+    out += '<circle cx="' + (cx + ir * 0.42) + '" cy="' + (EY + ir * 0.5) + '" r="' + (kind === "big" ? 3 : 2.3) + '" fill="#fff" opacity=".9"/>';
+    if (kind === "big") out += '<circle cx="' + (cx + ir * 0.1) + '" cy="' + (EY - ir * 0.55) + '" r="1.8" fill="#fff"/>';
     out += "</g>";
-    // 上まぶたのライン
-    out += '<path d="M' + (cx - rx - 1) + " " + (EY - 1) + "Q" + cx + " " + (EY - ry * 1.55) + " " + (cx + rx + 1) + " " + (EY - 1) + '" fill="none" stroke="' + ink + '" stroke-width="3" stroke-linecap="round"/>';
+    // まぶたの落とす影
+    out += "</g>";
+    // 上まぶた（太めのまつげライン＋目じりのハネ）
+    out += '<path d="M' + (cx - rx - 1) + " " + (EY + 1) + "C" + (cx - rx - 1) + " " + top + " " + (cx + rx + 1) + " " + top + " " + (cx + rx + 1) + " " + (EY + 1) + '" fill="none" stroke="' + ink + '" stroke-width="4.5" stroke-linecap="round"/>';
+    out += '<path d="M' + (cx + o * (rx + 1)) + " " + (EY - 4) + "q" + o * 5 + " -2 " + o * 8 + ' -7" fill="none" stroke="' + ink + '" stroke-width="3.5" stroke-linecap="round"/>';
+    // 下まぶた
+    out += '<path d="M' + (cx - rx + 4) + " " + (EY + ry - 3) + "Q" + cx + " " + (EY + ry + 5) + " " + (cx + rx - 4) + " " + (EY + ry - 3) + '" fill="none" stroke="' + shade(s.skin, -0.35) + '" stroke-width="2" stroke-linecap="round" opacity=".5"/>';
     if (kind === "lashes") {
-      var o = mirror ? 1 : -1;
-      out += '<path d="M' + (cx + o * (rx - 1)) + " " + (EY - 8) + "l" + o * 7 + " -6M" + (cx + o * (rx - 6)) + " " + (EY - 14) + "l" + o * 5 + " -7" +
+      out += '<path d="M' + (cx + o * (rx - 2)) + " " + (EY - 12) + "l" + o * 8 + " -7M" + (cx + o * (rx - 9)) + " " + (EY - 19) + "l" + o * 6 + " -8M" + (cx + o * (rx - 17)) + " " + (EY - 22) + "l" + o * 3 + " -8" +
         '" stroke="' + ink + '" stroke-width="3" stroke-linecap="round"/>';
     }
     if (kind === "sleepy") {
-      out += '<path d="M' + (cx - rx - 2) + " " + (EY + 1) + "Q" + cx + " " + (EY - ry * 1.7) + " " + (cx + rx + 2) + " " + (EY + 1) +
-        "L" + (cx + rx + 2) + " " + (EY - ry - 6) + "L" + (cx - rx - 2) + " " + (EY - ry - 6) + 'Z" fill="url(#' + s._u + '-skin)"/>';
-      out += '<path d="M' + (cx - rx) + " " + (EY + 1) + "Q" + cx + " " + (EY - 4) + " " + (cx + rx) + " " + (EY + 1) + '" fill="none" stroke="' + ink + '" stroke-width="3" stroke-linecap="round"/>';
+      out += '<path d="M' + (cx - rx - 3) + " " + (EY + 2) + "Q" + cx + " " + (EY - ry * 1.4) + " " + (cx + rx + 3) + " " + (EY + 2) +
+        "L" + (cx + rx + 3) + " " + (EY - ry - 8) + "L" + (cx - rx - 3) + " " + (EY - ry - 8) + 'Z" fill="' + shade(s.skin, -0.04) + '"/>';
+      out += '<path d="M' + (cx - rx - 1) + " " + (EY + 2) + "Q" + cx + " " + (EY - 9) + " " + (cx + rx + 1) + " " + (EY + 2) + '" fill="none" stroke="' + ink + '" stroke-width="4" stroke-linecap="round"/>';
     }
     return out + "</g>";
   }
 
   function renderNose(s) {
-    var d = shade(s.skin, -0.28), hl = shade(s.skin, 0.35), y = 228;
+    var u = s._u, d = shade(s.skin, -0.3), hl = shade(s.skin, 0.5), y = NY;
+    var shadow = function (rx, ry, op) { return '<ellipse cx="200" cy="' + (y + 3) + '" rx="' + rx + '" ry="' + ry + '" fill="' + d + '" opacity="' + op + '" filter="url(#' + u + '-b2)"/>'; };
+    var shine = function (ry) { return '<ellipse cx="198" cy="' + (y - 8) + '" rx="4" ry="' + ry + '" fill="' + hl + '" opacity=".55" filter="url(#' + u + '-b2)"/>'; };
+    var holes = function (dx) { return '<path d="M' + (200 - dx) + " " + (y + 3) + "q2 2 4 0M" + (200 + dx) + " " + (y + 3) + 'q-2 2 -4 0" fill="none" stroke="' + d + '" stroke-width="2.4" stroke-linecap="round" opacity=".8"/>'; };
     switch (s.nose) {
-      case "round": return '<ellipse cx="200" cy="' + (y - 2) + '" rx="13" ry="10" fill="' + shade(s.skin, -0.06) + '"/><ellipse cx="197" cy="' + (y - 6) + '" rx="5" ry="3" fill="' + hl + '" opacity=".7"/>' +
-        '<path d="M191 ' + (y + 4) + 'q3 3 5 1M209 ' + (y + 4) + 'q-3 3 -5 1" fill="none" stroke="' + d + '" stroke-width="2.5" stroke-linecap="round"/>';
-      case "tall": return '<path d="M203 ' + (y - 34) + "Q207 " + (y - 8) + " 210 " + (y - 2) + "Q206 " + (y + 6) + " 197 " + (y + 4) + '" fill="none" stroke="' + d + '" stroke-width="3" stroke-linecap="round"/><path d="M199 ' + (y - 30) + 'L200 ' + (y - 8) + '" stroke="' + hl + '" stroke-width="4" stroke-linecap="round" opacity=".6"/>';
-      case "wide": return '<path d="M184 ' + (y - 2) + "Q186 " + (y + 7) + " 194 " + (y + 4) + "Q200 " + (y + 9) + " 206 " + (y + 4) + "Q214 " + (y + 7) + " 216 " + (y - 2) + '" fill="none" stroke="' + d + '" stroke-width="3" stroke-linecap="round"/>';
-      case "dot": return '<ellipse cx="200" cy="' + y + '" rx="5" ry="3.5" fill="' + d + '" opacity=".7"/>';
-      default: return '<path d="M192 ' + (y + 1) + "Q200 " + (y + 8) + " 208 " + (y + 1) + '" fill="none" stroke="' + d + '" stroke-width="3" stroke-linecap="round"/><ellipse cx="200" cy="' + (y - 7) + '" rx="4" ry="6" fill="' + hl + '" opacity=".45"/>';
+      case "round": return shadow(14, 7, 0.45) + '<ellipse cx="200" cy="' + (y - 1) + '" rx="11" ry="8" fill="' + shade(s.skin, 0.06) + '"/>' + shine(5) + holes(8);
+      case "tall": return '<path d="M204 ' + (y - 26) + "Q208 " + (y - 4) + " 208 " + (y + 1) + '" fill="none" stroke="' + d + '" stroke-width="3" stroke-linecap="round" opacity=".55" filter="url(#' + u + '-b1)"/>' + shadow(10, 5, 0.4) + shine(10) + holes(6);
+      case "wide": return shadow(16, 6, 0.4) + shine(5) + holes(10);
+      case "dot": return '<ellipse cx="200" cy="' + y + '" rx="5" ry="3.5" fill="' + d + '" opacity=".55"/>';
+      default: return shadow(10, 5, 0.42) + shine(6) + holes(6);
     }
   }
 
   function renderMouth(s) {
-    var y = 258, lip = s.lip, dark = "#5A1F1F", tongue = "#E2717A";
+    return '<g transform="translate(200 ' + MY + ') scale(.86) translate(-200 -258)">' + mouthShape(s) + "</g>";
+  }
+  function mouthShape(s) {
+    var y = 258, lip = s.lip, dark = "#6E2129", tongue = "#EE8B95", u = s._u;
     switch (s.mouth) {
+      case "smile":
+        var m = "M172 " + (y - 5) + "Q200 " + (y + 40) + " 228 " + (y - 5) + "Q200 " + (y + 2) + " 172 " + (y - 5) + "Z";
+        return '<clipPath id="' + u + '-m"><path d="' + m + '"/></clipPath><path d="' + m + '" fill="' + dark + '"/>' +
+          '<g clip-path="url(#' + u + '-m)"><path d="M170 ' + (y - 8) + "Q200 " + (y + 8) + " 230 " + (y - 8) + 'Z" fill="#fff"/><ellipse cx="200" cy="' + (y + 22) + '" rx="15" ry="9" fill="' + tongue + '"/></g>' +
+          '<path d="' + m + '" fill="none" stroke="' + lip + '" stroke-width="3" stroke-linejoin="round"/>';
+      case "closed":
+        return '<path d="M176 ' + (y - 2) + "Q200 " + (y + 18) + " 224 " + (y - 2) + '" fill="none" stroke="' + shade(lip, -0.25) + '" stroke-width="5.5" stroke-linecap="round"/>' +
+          '<path d="M190 ' + (y + 13) + "Q200 " + (y + 17) + " 210 " + (y + 13) + '" fill="none" stroke="' + lip + '" stroke-width="4" stroke-linecap="round" opacity=".5"/>';
       case "grin": return '<path d="M172 ' + (y - 6) + "Q200 " + (y + 30) + " 228 " + (y - 6) + "Q200 " + (y + 2) + " 172 " + (y - 6) + 'Z" fill="' + dark + '"/>' +
         '<path d="M176 ' + (y - 4) + "Q200 " + (y + 3) + " 224 " + (y - 4) + "L222 " + (y + 4) + "Q200 " + (y + 9) + " 178 " + (y + 4) + 'Z" fill="#fff"/>' +
         '<path d="M172 ' + (y - 6) + "Q200 " + (y + 30) + " 228 " + (y - 6) + '" fill="none" stroke="' + lip + '" stroke-width="3" stroke-linecap="round"/>';
@@ -378,19 +402,19 @@ button,input{font-family:inherit}
     var u = s._u, out = "";
     if (s.beard === "none") return "";
     if (s.beard === "mustache") {
-      return '<path d="M200 241C190 234 176 236 168 248C178 246 188 248 200 246C212 248 222 246 232 248C224 236 210 234 200 241Z" fill="' + hc + '"/>';
+      return '<path d="M200 253C190 246 176 248 168 260C178 258 188 260 200 258C212 260 222 258 232 260C224 248 210 246 200 253Z" fill="' + hc + '"/>';
     }
     if (s.beard === "goatee") {
-      return '<path d="M200 241C190 234 178 236 172 246C180 244 190 246 200 245C210 246 220 244 228 246C222 236 210 234 200 241Z" fill="' + hc + '"/>' +
+      return '<path d="M200 253C190 246 178 248 172 258C180 256 190 258 200 257C210 258 220 256 228 258C222 248 210 246 200 253Z" fill="' + hc + '"/>' +
         '<path d="M184 ' + (f.chin - 30) + "Q200 " + (f.chin - 36) + " 216 " + (f.chin - 30) + "Q214 " + (f.chin + 10) + " 200 " + (f.chin + 12) + "Q186 " + (f.chin + 10) + " 184 " + (f.chin - 30) + 'Z" fill="' + hc + '"/>';
     }
-    var w = f.w, region = "M" + (200 - w - 6) + " 200C" + (200 - w + 20) + " 236 " + (200 - 34) + " 232 200 236C" + (200 + 34) + " 232 " + (200 + w - 20) + " 236 " + (200 + w + 6) + " 200L420 420L-20 420Z";
+    var w = f.w, region = "M" + (200 - w - 6) + " 205C" + (200 - w + 20) + " 246 " + (200 - 34) + " 244 200 248C" + (200 + 34) + " 244 " + (200 + w - 20) + " 246 " + (200 + w + 6) + " 205L420 420L-20 420Z";
     out += '<g clip-path="url(#' + u + '-head)"><path d="' + region + '" fill="' + hc + '" opacity="' + (s.beard === "stubble" ? 0.32 : 1) + '"/></g>';
     if (s.beard === "full") {
       out += '<path d="M' + (200 - w * 0.62) + " " + (f.chin - 26) + "Q200 " + (f.chin + 46) + " " + (200 + w * 0.62) + " " + (f.chin - 26) + 'Z" fill="' + hc + '"/>';
-      out += '<path d="M200 241C190 234 176 236 168 248C178 246 188 248 200 246C212 248 222 246 232 248C224 236 210 234 200 241Z" fill="' + shade(hc, -0.15) + '"/>';
+      out += '<path d="M200 253C190 246 176 248 168 260C178 258 188 260 200 258C212 260 222 258 232 260C224 248 210 246 200 253Z" fill="' + shade(hc, -0.15) + '"/>';
       // 口のまわりを肌色で抜く
-      out += '<ellipse cx="200" cy="260" rx="24" ry="13" fill="url(#' + u + '-skin)"/>';
+      out += '<ellipse cx="200" cy="' + (MY + 2) + '" rx="22" ry="12" fill="url(#' + u + '-skin)"/>';
     }
     return out;
   }
@@ -399,8 +423,8 @@ button,input{font-family:inherit}
     var c = s.glassesColor, l = 200 - EX, r = 200 + EX, out = "";
     switch (s.glasses) {
       case "round":
-        return '<circle cx="' + l + '" cy="' + EY + '" r="26" fill="#fff" fill-opacity=".12" stroke="' + c + '" stroke-width="5"/><circle cx="' + r + '" cy="' + EY + '" r="26" fill="#fff" fill-opacity=".12" stroke="' + c + '" stroke-width="5"/>' +
-          '<path d="M' + (l + 26) + " " + (EY - 4) + "Q200 " + (EY - 14) + " " + (r - 26) + " " + (EY - 4) + 'M' + (l - 26) + " " + (EY - 4) + "L" + (l - 50) + " " + (EY - 10) + "M" + (r + 26) + " " + (EY - 4) + "L" + (r + 50) + " " + (EY - 10) + '" fill="none" stroke="' + c + '" stroke-width="5" stroke-linecap="round"/>';
+        return '<circle cx="' + l + '" cy="' + EY + '" r="29" fill="#fff" fill-opacity=".12" stroke="' + c + '" stroke-width="5"/><circle cx="' + r + '" cy="' + EY + '" r="29" fill="#fff" fill-opacity=".12" stroke="' + c + '" stroke-width="5"/>' +
+          '<path d="M' + (l + 29) + " " + (EY - 4) + "Q200 " + (EY - 14) + " " + (r - 29) + " " + (EY - 4) + 'M' + (l - 29) + " " + (EY - 4) + "L" + (l - 54) + " " + (EY - 10) + "M" + (r + 29) + " " + (EY - 4) + "L" + (r + 54) + " " + (EY - 10) + '" fill="none" stroke="' + c + '" stroke-width="5" stroke-linecap="round"/>';
       case "square":
       case "half":
         out += '<rect x="' + (l - 30) + '" y="' + (EY - 22) + '" width="60" height="44" rx="10" fill="#fff" fill-opacity=".12" stroke="' + c + '" stroke-width="' + (s.glasses === "half" ? 2 : 5) + '"/>';
@@ -503,10 +527,12 @@ button,input{font-family:inherit}
     var o = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="' + vb + '" width="' + (opt.size || 400) + '" height="' + (opt.size || 400) + '">';
 
     o += "<defs>" +
-      '<radialGradient id="' + u + '-skin" cx="42%" cy="36%" r="72%"><stop offset="0" stop-color="' + shade(skin, 0.16) + '"/><stop offset=".6" stop-color="' + skin + '"/><stop offset="1" stop-color="' + shade(skin, -0.14) + '"/></radialGradient>' +
+      '<radialGradient id="' + u + '-skin" cx="45%" cy="40%" r="68%"><stop offset="0" stop-color="' + shade(skin, 0.18) + '"/><stop offset=".55" stop-color="' + skin + '"/><stop offset=".88" stop-color="' + shade(skin, -0.1) + '"/><stop offset="1" stop-color="' + shade(skin, -0.2) + '"/></radialGradient>' +
       '<linearGradient id="' + u + '-neck" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="' + shade(skin, -0.25) + '"/><stop offset=".5" stop-color="' + shade(skin, -0.08) + '"/></linearGradient>' +
       '<linearGradient id="' + u + '-hair" gradientUnits="userSpaceOnUse" x1="0" y1="' + (f.top - 40) + '" x2="0" y2="' + (f.top + 260) + '"><stop offset="0" stop-color="' + shade(hc, 0.2) + '"/><stop offset=".55" stop-color="' + hc + '"/><stop offset="1" stop-color="' + shade(hc, -0.2) + '"/></linearGradient>' +
-      '<radialGradient id="' + u + '-iris" cx="50%" cy="40%" r="60%"><stop offset="0" stop-color="' + shade(s.eyeColor, 0.35) + '"/><stop offset="1" stop-color="' + shade(s.eyeColor, -0.15) + '"/></radialGradient>' +
+      '<radialGradient id="' + u + '-iris" cx="50%" cy="72%" r="70%"><stop offset="0" stop-color="' + shade(s.eyeColor, 0.55) + '"/><stop offset=".55" stop-color="' + s.eyeColor + '"/><stop offset="1" stop-color="' + shade(s.eyeColor, -0.35) + '"/></radialGradient>' +
+      '<linearGradient id="' + u + '-white" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#E9E1DE"/><stop offset=".45" stop-color="#FFFFFF"/></linearGradient>' +
+      [1, 2, 4, 7].map(function (n) { return '<filter id="' + u + '-b' + n + '" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="' + n + '"/></filter>'; }).join("") +
       '<linearGradient id="' + u + '-cloth" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="' + shade(s.clothesColor, 0.12) + '"/><stop offset="1" stop-color="' + shade(s.clothesColor, -0.12) + '"/></linearGradient>' +
       '<linearGradient id="' + u + '-hat" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="' + shade(s.hatColor, 0.2) + '"/><stop offset="1" stop-color="' + shade(s.hatColor, -0.12) + '"/></linearGradient>' +
       '<linearGradient id="' + u + '-sun" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#3A3F47"/><stop offset="1" stop-color="#0E1014"/></linearGradient>' +
@@ -521,26 +547,37 @@ button,input{font-family:inherit}
     if (hair.back) o += '<path d="' + hair.back + '" fill="url(#' + u + '-hair)"/>';
     o += "</g>";
 
-    // 首と体（体は揺らさない）
-    o += '<path d="M172 250L228 250L230 340Q200 352 170 340Z" fill="url(#' + u + '-neck)"/>';
+    // 首と体（体は揺らさない・頭に対して小さめにして可愛く）
+    o += '<g transform="translate(200 0) scale(.82 1) translate(-200 0)">';
+    var neck = "M174 250L226 250L228 340Q200 352 172 340Z";
+    o += '<clipPath id="' + u + '-nk"><path d="' + neck + '"/></clipPath><path d="' + neck + '" fill="url(#' + u + '-neck)"/>';
+    o += '<g clip-path="url(#' + u + '-nk)"><ellipse cx="200" cy="' + (f.chin + 6) + '" rx="34" ry="14" fill="' + shade(skin, -0.45) + '" opacity=".35" filter="url(#' + u + '-b4)"/></g>';
     o += renderBody(s);
+    o += "</g>";
 
     o += '<g class="av-head">';
     // 耳
     if (!hair.coverEars) [-1, 1].forEach(function (d) {
       var ex = 200 + d * (f.w + 3);
-      o += '<ellipse cx="' + ex + '" cy="202" rx="16" ry="23" fill="' + shade(skin, -0.06) + '"/>';
-      o += '<path d="M' + (ex + d * 2) + " 190Q" + (ex + d * 8) + " 202 " + (ex + d * 1) + ' 214" fill="none" stroke="' + shade(skin, -0.25) + '" stroke-width="3" stroke-linecap="round"/>';
+      o += '<ellipse cx="' + ex + '" cy="214" rx="15" ry="21" fill="' + shade(skin, -0.08) + '"/>';
+      o += '<path d="M' + (ex + d * 2) + " 203Q" + (ex + d * 8) + " 214 " + (ex + d * 1) + ' 225" fill="none" stroke="' + shade(skin, -0.3) + '" stroke-width="3" stroke-linecap="round" opacity=".6"/>';
     });
     // 頭
     o += '<path d="' + headPath(f) + '" fill="url(#' + u + '-skin)"/>';
     // あご下の影
-    o += '<g clip-path="url(#' + u + '-head)"><ellipse cx="200" cy="' + (f.chin + 20) + '" rx="' + f.w + '" ry="34" fill="' + shade(skin, -0.3) + '" opacity=".12"/></g>';
+    o += '<g clip-path="url(#' + u + '-head)">' +
+      // おでこ・ほおのツヤ
+      '<ellipse cx="186" cy="' + (f.top + 52) + '" rx="46" ry="24" fill="#fff" opacity=".22" filter="url(#' + u + '-b7)"/>' +
+      '<ellipse cx="' + (200 - 66) + '" cy="222" rx="16" ry="10" fill="#fff" opacity=".2" filter="url(#' + u + '-b4)"/>' +
+      '<ellipse cx="' + (200 + 66) + '" cy="222" rx="16" ry="10" fill="#fff" opacity=".2" filter="url(#' + u + '-b4)"/>' +
+      // 前髪がおでこに落とす影
+      (hair.front ? '<path d="' + hair.front + '" transform="translate(0 8)" fill="' + shade(skin, -0.5) + '" opacity=".18" filter="url(#' + u + '-b4)"/>' : "") +
+      "</g>";
 
-    if (s.blush) o += '<ellipse cx="' + (200 - 62) + '" cy="234" rx="17" ry="10" fill="#FF6F7D" opacity=".22"/><ellipse cx="' + (200 + 62) + '" cy="234" rx="17" ry="10" fill="#FF6F7D" opacity=".22"/>';
+    if (s.blush) o += '<g fill="#FF6B7F" opacity=".38" filter="url(#' + u + '-b7)"><ellipse cx="' + (200 - 66) + '" cy="248" rx="21" ry="13"/><ellipse cx="' + (200 + 66) + '" cy="248" rx="21" ry="13"/></g>';
     if (s.freckles) {
       var fr = "";
-      [[-70, 220], [-58, 226], [-74, 230], [-62, 214], [-50, 220]].forEach(function (p) {
+      [[-74, 236], [-62, 242], [-78, 246], [-66, 230], [-54, 236]].forEach(function (p) {
         fr += '<circle cx="' + (200 + p[0]) + '" cy="' + p[1] + '" r="2.2"/><circle cx="' + (200 - p[0]) + '" cy="' + p[1] + '" r="2.2"/>';
       });
       o += '<g fill="' + shade(skin, -0.4) + '" opacity=".55">' + fr + "</g>";
@@ -561,7 +598,7 @@ button,input{font-family:inherit}
 
     // 眉
     var b = BROWS[s.brows] || BROWS.natural, bc = s.hair === "none" ? shade(skin, -0.45) : shade(hc, hc === "#F2F2F2" ? -0.25 : -0.12);
-    var byy = (s.eyes === "surprise" || s.eyes === "big") ? 152 : 158;
+    var byy = (s.eyes === "surprise" || s.eyes === "big") ? 164 : 170;
     o += '<g fill="none" stroke="' + bc + '" stroke-width="' + b.sw + '" stroke-linecap="round">' +
       '<path transform="translate(' + (200 - EX) + " " + byy + ')" d="' + b.d + '"/>' +
       '<path transform="translate(' + (200 + EX) + " " + byy + ') scale(-1 1)" d="' + b.d + '"/></g>';
@@ -569,7 +606,13 @@ button,input{font-family:inherit}
     // 前髪
     if (hair.front) {
       o += '<path d="' + hair.front + '" fill="url(#' + u + '-hair)"' + (hair.soft ? ' opacity=".9"' : "") + "/>";
-      o += '<g clip-path="url(#' + u + '-hf)"><ellipse cx="160" cy="' + (f.top + 20) + '" rx="60" ry="22" transform="rotate(-18 160 ' + (f.top + 20) + ')" fill="#fff" opacity=".16"/></g>';
+      var st = "", k;
+      for (k = -2; k <= 2; k++) st += "M" + (200 + k * f.w * 0.1) + " " + (f.top - 10) + "Q" + (200 + k * f.w * 0.3) + " " + (f.top + 30) + " " + (200 + k * f.w * 0.36) + " 190";
+      o += '<g clip-path="url(#' + u + '-hf)">' +
+        '<path d="' + st + '" fill="none" stroke="' + shade(hc, -0.3) + '" stroke-width="1.6" opacity=".18"/>' +
+        '<path d="M' + (200 - f.w * 0.75) + " " + (f.top + 50) + "Q200 " + (f.top + 4) + " " + (200 + f.w * 0.75) + " " + (f.top + 50) + '" fill="none" stroke="#fff" stroke-width="12" stroke-linecap="round" opacity=".28" filter="url(#' + u + '-b4)"/>' +
+        '<ellipse cx="200" cy="' + (f.top + 210) + '" rx="' + (f.w + 30) + '" ry="70" fill="' + shade(hc, -0.4) + '" opacity=".3" filter="url(#' + u + '-b7)"/>' +
+        "</g>";
     }
     if (hair.locks) o += '<path d="' + hair.locks + '" fill="url(#' + u + '-hair)"/>';
     if (hair.extra) o += '<path d="' + hair.extra + '" fill="url(#' + u + '-hair)"/>';
@@ -586,14 +629,14 @@ button,input{font-family:inherit}
   var CATS = [
     { key: "face",     label: "輪郭・肌", opts: FACES,    color: ["skin", SKINS], toggles: [["blush", "チーク"], ["freckles", "そばかす"]], vb: "50 40 300 300" },
     { key: "hair",     label: "髪型",     opts: HAIRS,    color: ["hairColor", HAIR_COLORS], vb: "20 -10 360 360" },
-    { key: "brows",    label: "まゆ",     opts: BROWS,    color: ["hairColor", HAIR_COLORS], vb: "120 120 160 110" },
-    { key: "eyes",     label: "目",       opts: EYES,     color: ["eyeColor", EYE_COLORS], vb: "125 140 150 110" },
-    { key: "nose",     label: "鼻",       opts: NOSES,    vb: "150 180 100 90" },
-    { key: "mouth",    label: "口",       opts: MOUTHS,   color: ["lip", LIP_COLORS], vb: "140 210 120 100" },
+    { key: "brows",    label: "まゆ",     opts: BROWS,    color: ["hairColor", HAIR_COLORS], vb: "125 140 150 105" },
+    { key: "eyes",     label: "目",       opts: EYES,     color: ["eyeColor", EYE_COLORS], vb: "128 158 144 100" },
+    { key: "nose",     label: "鼻",       opts: NOSES,    vb: "160 210 80 70" },
+    { key: "mouth",    label: "口",       opts: MOUTHS,   color: ["lip", LIP_COLORS], vb: "155 235 90 70" },
     { key: "beard",    label: "ひげ",     opts: BEARDS,   color: ["hairColor", HAIR_COLORS], vb: "70 160 260 200" },
-    { key: "glasses",  label: "メガネ",   opts: GLASSES,  color: ["glassesColor", GLASSES_COLORS], vb: "120 130 160 120" },
+    { key: "glasses",  label: "メガネ",   opts: GLASSES,  color: ["glassesColor", GLASSES_COLORS], vb: "115 150 170 120" },
     { key: "hat",      label: "帽子",     opts: HATS,     color: ["hatColor", HAT_COLORS], vb: "10 -20 380 300" },
-    { key: "earrings", label: "ピアス",   opts: EARRINGS, vb: "60 150 280 130" },
+    { key: "earrings", label: "ピアス",   opts: EARRINGS, vb: "60 160 280 130" },
     { key: "clothes",  label: "服",       opts: CLOTHES,  color: ["clothesColor", CLOTHES_COLORS], vb: "40 220 320 180" },
     { key: "bg",       label: "背景",     color: ["bg", BG_COLORS] }
   ];
