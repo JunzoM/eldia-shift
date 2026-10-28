@@ -48,6 +48,8 @@ STATIC = {
     "/import": "import.html",
     "/import.html": "import.html",
     "/export.html": "export.html",
+    "/avatar": "avatar.html",
+    "/avatar.html": "avatar.html",
     "/vendor/react.production.min.js": "vendor/react.production.min.js",
     "/vendor/react-dom.production.min.js": "vendor/react-dom.production.min.js",
     "/vendor/babel.min.js": "vendor/babel.min.js",
