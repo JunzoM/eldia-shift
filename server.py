@@ -50,12 +50,14 @@ STATIC = {
     "/export.html": "export.html",
     "/avatar": "avatar.html",
     "/avatar.html": "avatar.html",
+    "/avatar3d.js": "avatar3d.js",
     "/vendor/react.production.min.js": "vendor/react.production.min.js",
     "/vendor/react-dom.production.min.js": "vendor/react-dom.production.min.js",
     "/vendor/babel.min.js": "vendor/babel.min.js",
     "/vendor/html2canvas.min.js": "vendor/html2canvas.min.js",
     "/vendor/jspdf.umd.min.js": "vendor/jspdf.umd.min.js",
     "/vendor/qrcode.js": "vendor/qrcode.js",
+    "/vendor/three.min.js": "vendor/three.min.js",
 }
 
 db_lock = threading.Lock()
