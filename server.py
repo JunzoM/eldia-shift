@@ -22,7 +22,7 @@ import threading
 import time
 from datetime import datetime
 from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
-from urllib.parse import urlparse, unquote, parse_qs
+from urllib.parse import urlparse, unquote, quote, parse_qs
 
 PORT = int(os.environ.get("ELDIA_PORT", "8765"))
 # 0.0.0.0 で待ち受け、iPad等（LAN）からの接続は「LAN利用ON＋PIN」のときだけ通す
@@ -41,6 +41,14 @@ SESSION_DAYS = 90
 COOKIE = "eldia_session"
 
 ALLOWED_APPS = {"shift"}           # 予約印刷を載せるときは "print" を追加
+
+# iPad等で作ったPDFを一時的に置き、Safariで開いて「共有」→ iCloud Drive / ファイルに保存 / AirDrop できるようにする
+# （事務所Wi-Fiは http のため、iPadのブラウザでは共有メニュー・ダウンロードが使えないことがある）
+PDF_TTL = 30 * 60
+PDF_KEEP = 10
+MAX_PDF = 15 * 1024 * 1024
+pdf_lock = threading.Lock()
+pdf_store = {}  # id -> (bytes, expires)
 
 STATIC = {
     "/": "index.html",
@@ -76,8 +84,18 @@ def log(msg):
 
 
 # ─── DB ──────────────────────────────────────────────────────────────────────
+class _Conn(sqlite3.Connection):
+    # sqlite3 標準の with はコミットするだけで接続を閉じないため、閉じるところまで行う
+    def __exit__(self, exc_type, exc, tb):
+        try:
+            return super().__exit__(exc_type, exc, tb)
+        finally:
+            self.close()
+
+
 def connect():
-    con = sqlite3.connect(DB_PATH, timeout=10)
+    """with connect() as con: … の形で使う。抜けるときにコミットして接続を閉じる"""
+    con = _Conn(DB_PATH, timeout=10)
     con.execute("PRAGMA journal_mode=WAL")
     con.execute("PRAGMA synchronous=FULL")
     return con
@@ -339,6 +357,9 @@ class Handler(SimpleHTTPRequestHandler):
                 pass
             return self._json(200, {"endpoint": SHARE_ENDPOINT, "key": key})
 
+        if path.startswith("/pdf/"):
+            return self._serve_pdf(path)
+
         if path.startswith("/api/revs/"):
             app = unquote(path[len("/api/revs/"):])
             if app not in ALLOWED_APPS:
@@ -419,6 +440,8 @@ class Handler(SimpleHTTPRequestHandler):
             with open(SHARE_CONF, "w", encoding="utf-8") as f:
                 json.dump({"key": key}, f)
             return self._json(200, {"ok": True, "configured": bool(key)})
+        if path == "/api/pdf":
+            return self._store_pdf()
         if path == "/api/backup":
             try:
                 backup_now()
@@ -427,6 +450,43 @@ class Handler(SimpleHTTPRequestHandler):
                 return self._json(500, {"error": "backup failed"})
             return self._json(200, {"ok": True})
         return self._json(404, {"error": "not found"})
+
+    # --- 一時PDF（iPadの共有メニュー用） ------------------------------------
+    def _store_pdf(self):
+        if "application/pdf" not in self.headers.get("Content-Type", ""):
+            return self._json(415, {"error": "pdf only"})
+        raw = self._read_body(MAX_PDF)
+        if raw is None or not raw.startswith(b"%PDF-"):
+            return self._json(400, {"error": "PDFではありません"})
+        pid = secrets.token_urlsafe(18)
+        now = time.time()
+        with pdf_lock:
+            for k in [k for k, (_, exp) in pdf_store.items() if exp < now]:
+                del pdf_store[k]
+            while len(pdf_store) >= PDF_KEEP:
+                del pdf_store[min(pdf_store, key=lambda k: pdf_store[k][1])]
+            pdf_store[pid] = (raw, now + PDF_TTL)
+        return self._json(200, {"ok": True, "path": f"/pdf/{pid}/"})
+
+    def _serve_pdf(self, path):
+        # /pdf/<id>/<ファイル名>.pdf（ファイル名は保存時の名前に使われる）
+        parts = path.split("/")
+        pid = parts[2] if len(parts) > 2 else ""
+        with pdf_lock:
+            item = pdf_store.get(pid)
+        if not item or item[1] < time.time():
+            return self._html(404, "<!DOCTYPE html><meta charset='utf-8'><meta name='viewport' content='width=device-width'>"
+                                   "<p style='font:16px sans-serif;padding:24px'>このPDFは期限が切れました。シフト表の印刷画面から、もう一度作成してください。</p>")
+        body = item[0]
+        name = unquote(parts[3]) if len(parts) > 3 and parts[3] else "shift.pdf"
+        self.send_response(200)
+        self.send_header("Content-Type", "application/pdf")
+        self.send_header("Content-Disposition", "inline; filename*=UTF-8''" + quote(name))
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.end_headers()
+        self.wfile.write(body)
 
     def _login(self):
         if not self._host_ok():
@@ -506,28 +566,34 @@ class Handler(SimpleHTTPRequestHandler):
             payload = json.loads(raw.decode("utf-8"))
             value = payload["value"]
             base = payload.get("base_rev")  # 読み込んだときの版。無ければ上書き（読み込み画面など）
+            if base is not None:
+                base = int(base)
         except Exception:
             return self._json(400, {"error": "bad json"})
         app, key = parsed
         now = datetime.now().isoformat(timespec="seconds")
+        conflict_rev = None
+        new_rev = None
         try:
             with db_lock, connect() as con:
                 row = con.execute("SELECT rev FROM kv_store WHERE app=? AND key=?", (app, key)).fetchone()
                 cur = row[0] if row else 0
-                if base is not None and int(base) != cur:
-                    # 別の端末が先に保存していた → 上書きしない
-                    return self._json(409, {"error": "conflict", "rev": cur})
-                con.execute(
-                    """INSERT INTO kv_store(app, key, value, updated_at, rev) VALUES (?,?,?,?,1)
-                       ON CONFLICT(app, key) DO UPDATE SET value=excluded.value,
-                                                         updated_at=excluded.updated_at,
-                                                         rev=kv_store.rev+1""",
-                    (app, key, json.dumps(value, ensure_ascii=False), now),
-                )
-                new_rev = con.execute("SELECT rev FROM kv_store WHERE app=? AND key=?", (app, key)).fetchone()[0]
+                if base is not None and base != cur:
+                    conflict_rev = cur  # 別の端末が先に保存していた → 上書きしない
+                else:
+                    con.execute(
+                        """INSERT INTO kv_store(app, key, value, updated_at, rev) VALUES (?,?,?,?,1)
+                           ON CONFLICT(app, key) DO UPDATE SET value=excluded.value,
+                                                             updated_at=excluded.updated_at,
+                                                             rev=kv_store.rev+1""",
+                        (app, key, json.dumps(value, ensure_ascii=False), now),
+                    )
+                    new_rev = con.execute("SELECT rev FROM kv_store WHERE app=? AND key=?", (app, key)).fetchone()[0]
         except Exception as e:
             log(f"save failed {app}/{key}: {e}")
             return self._json(500, {"error": "save failed"})
+        if conflict_rev is not None:
+            return self._json(409, {"error": "conflict", "rev": conflict_rev})
         return self._json(200, {"ok": True, "updated_at": now, "rev": new_rev})
 
 

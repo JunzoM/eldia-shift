@@ -58,15 +58,18 @@ const REVS = {};
 const LAST = {};
 function toLogin(){ location.href = "/login"; }
 
-async function dbLoad(key) {
+async function dbFetch(key) {
   const res = await fetch(API_BASE + encodeURIComponent(key), { cache: "no-store" });
   if (res.status === 401) { toLogin(); throw new Error("ログインが必要です"); }
   if (!res.ok) throw new Error("読込エラー " + res.status);
   const { value, rev } = await res.json();
-  REVS[key] = rev || 0;
+  return { value, rev: rev || 0 };
+}
+// 読み込んだ内容を「保存済み」として記録する
+function dbCommit(key, { value, rev }) {
+  REVS[key] = rev;
   LAST[key] = JSON.stringify(value);
   if (value !== null) lsSet(key, value);
-  return value;
 }
 
 async function dbRevs() {
@@ -124,9 +127,11 @@ async function buildShiftPdf(container){
   const { jsPDF } = window.jspdf;
   let pdf=null;
   for(const pg of pages){
-    const land=pg.offsetWidth>pg.offsetHeight;
+    const land=pg.offsetWidth>1000;   // 横向きページは幅297mm（約1123px）、縦向きは210mm（約794px）
     const W=land?297:210, H=land?210:297;
-    const canvas=await window.html2canvas(pg,{scale:2,backgroundColor:"#ffffff",logging:false});
+    // iPadはキャンバスの大きさに上限があるため、縦に長いページは解像度を下げる
+    const scale=Math.max(1,Math.min(2,4000/Math.max(pg.offsetWidth,pg.offsetHeight)));
+    const canvas=await window.html2canvas(pg,{scale,backgroundColor:"#ffffff",logging:false});
     if(!pdf) pdf=new jsPDF({orientation:land?"landscape":"portrait",unit:"mm",format:"a4",compress:true});
     else pdf.addPage("a4",land?"landscape":"portrait");
     // A4に収まるよう縮小（縦横比は維持）
@@ -153,8 +158,42 @@ function qrSvg(text){
   return qr.createSvgTag({cellSize:6,margin:4,scalable:true});
 }
 function downloadBlob(blob,name){
-  const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download=name;
-  document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(a.href),5000);
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement("a"); a.href=url; a.download=name;
+  document.body.appendChild(a); a.click(); a.remove();
+  // 「ダウンロードしますか？」の確認中に消えないよう、長めに残す
+  setTimeout(()=>URL.revokeObjectURL(url),120000);
+}
+// iPad / iPhone（iPadOSのSafariは Mac と名乗るため、タッチ対応で見分ける）
+const IS_IOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform==="MacIntel" && navigator.maxTouchPoints>1);
+// 端末の共有メニュー（iCloud Drive・ファイルに保存・AirDrop・メッセージ等）にPDFを渡せるか
+// ※ https または このPC自身（127.0.0.1）のときだけ使える。事務所Wi-Fi経由のiPad（http://192.168…）では使えない
+function canShareFiles(){
+  try{
+    if(!window.isSecureContext||!navigator.share||!navigator.canShare) return false;
+    return navigator.canShare({files:[new File([new Blob(["%PDF-"])],"t.pdf",{type:"application/pdf"})]});
+  }catch(_){ return false; }
+}
+// PDFをこのPCのサーバーに一時的に置き、そのアドレスを返す（30分で消える）
+// Safariで開けば、画面の共有ボタンから「ファイルに保存」（iCloud Drive）・AirDrop などができる
+async function stagePdf(blob,name){
+  let res;
+  try{ res=await fetch("/api/pdf",{method:"POST",headers:{"Content-Type":"application/pdf","X-Eldia":"1"},body:blob}); }
+  catch(e){ throw new Error("シフト表のサーバー（PC）につながりませんでした。"); }
+  if(res.status===401){ toLogin(); throw new Error("ログインが必要です"); }
+  const j=await res.json().catch(()=>({}));
+  if(!res.ok||!j.path) throw new Error(j.error||("PDFを用意できませんでした（"+res.status+"）"));
+  return location.origin+j.path+encodeURIComponent(name);
+}
+// 文字をコピー（http のiPadでは navigator.clipboard が無いので、昔ながらの方法も試す）
+async function copyText(text){
+  try{ if(navigator.clipboard&&window.isSecureContext){ await navigator.clipboard.writeText(text); return true; } }catch(_){}
+  try{
+    const ta=document.createElement("textarea");
+    ta.value=text; ta.readOnly=true; ta.style.cssText="position:fixed;top:0;left:0;opacity:0;font-size:16px";
+    document.body.appendChild(ta); ta.focus(); ta.select(); ta.setSelectionRange(0,text.length);
+    const ok=document.execCommand("copy"); ta.remove(); return ok;
+  }catch(_){ return false; }
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -210,7 +249,8 @@ const withholdingTax = m => {
 // 労基法第39条 有給付与日数計算（勤続月数→今期付与＋繰越付与）
 const calcPaidLeaveGrant = (joinDate, weeklyDays, weeklyHours) => {
   if(!joinDate) return null;
-  const join=new Date(joinDate);
+  const join=parseYmd(joinDate);
+  if(!join) return null;
   const today=new Date();
   let months=(today.getFullYear()-join.getFullYear())*12+(today.getMonth()-join.getMonth());
   if(today.getDate()<join.getDate()) months--;
@@ -230,6 +270,12 @@ const getDays  = (y,m) => new Date(y,m+1,0).getDate();
 const getDow   = (y,m,d) => new Date(y,m,d).getDay();
 // 日付キーは日本時間（端末の現地時刻）の YYYY-MM-DD。toISOString() はUTCになり1日前にずれるため使わない
 const ymd = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+// "YYYY-MM-DD" を端末の現地時刻 0:00 の Date に。new Date("YYYY-MM-DD") はUTC扱い（日本では当日9:00）になり、
+// 入社日当日が「入社前」と判定されるなどの誤りが出るため使わない
+const parseYmd = v => {
+  const m=/^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(normalizeDate(String(v||"")));
+  return m ? new Date(+m[1],+m[2]-1,+m[3]) : null;
+};
 
 const getMondayOf = date => {
   const d=new Date(date); const dow=d.getDay();
@@ -1299,7 +1345,7 @@ function ShiftCell({ s, dateObj, globalTemplates, cellData, setCellData, getEffe
   const [pp,setPP]=useState(null);
 
   // 退職日チェック: 退職日が設定されていてその日より後ならグレーアウト
-  const leaveDate = s.leaveDate ? new Date(s.leaveDate) : null;
+  const leaveDate = s.leaveDate ? parseYmd(s.leaveDate) : null;
   const isAfterLeave = leaveDate && dateObj > leaveDate;
 
   const eff=isAfterLeave ? null : getEffective(s,dateObj);
@@ -1441,7 +1487,7 @@ function DayTimeline({ date, staffByDept, getEffective, setCellData, locked, onU
   // 各スタッフのその日のシフト（分）を算出
   const rows = staffByDept.map(dept=>({
     ...dept,
-    members: dept.members.filter(s=>!(s.leaveDate && date > new Date(s.leaveDate))).map(s=>{
+    members: dept.members.filter(s=>!(s.leaveDate && date > parseYmd(s.leaveDate))).map(s=>{
       const eff=getEffective(s,date);
       let span=null;
       if(eff && !eff.isOff && eff.inTime && eff.outTime){
@@ -1689,6 +1735,476 @@ function ShareKeySetting(){
   );
 }
 
+// ─── Print（ShiftApp の外に置く：中に置くと親の再描画のたびに作り直され、選択や作成中のPDFが消える） ───
+function PrintModal({onClose, year, month, monthDates, weekDates, weekLabel, viewMode, staffByDept, summary, globalTemplates, getEffective, findBlock}){
+  const [fmt,setFmt]=useState("weekly-dept");
+  const [halfSel,setHalfSel]=useState("both"); // "both"|"first"|"second"
+  const [deptSel,setDeptSel]=useState({make:true,kitchen:true,front:true}); // 部門選択
+  const [share,setShare]=useState({busy:"",url:"",expires:"",key:"",error:"",qr:false,copied:false});
+  const [pdfRender,setPdfRender]=useState(false);
+  const [pdfLink,setPdfLink]=useState(null);     // iPad: 開いて共有するPDFのアドレス {key,url}
+  const [sheetReady,setSheetReady]=useState("");  // 共有メニュー：PDF準備済みでもう一度押してもらう形式
+  const pdfRef=useRef(null);
+  const pdfCache=useRef({key:"",blob:null});     // 同じ形式のPDFは作り直さない
+  const canSheet=useMemo(()=>canShareFiles(),[]);
+  const shareKey=JSON.stringify([fmt,halfSel,deptSel,weekDates[0]&&ymd(weekDates[0]),year,month]);
+  const pdfName=fmt.includes("weekly")?`シフト表_${ymd(weekDates[0])}の週.pdf`:`シフト表_${year}年${month+1}月.pdf`;
+  const shareTitle=fmt.includes("weekly")?`シフト表 ${weekLabel}`:`シフト表 ${year}年${month+1}月`;
+  async function makePdf(){
+    if(pdfCache.current.key===shareKey&&pdfCache.current.blob) return pdfCache.current.blob;
+    setPdfRender(true);
+    try{
+      // オフスクリーンに描画されるのを待つ
+      for(let i=0;i<30&&!(pdfRef.current&&pdfRef.current.children.length);i++) await new Promise(r=>setTimeout(r,100));
+      await new Promise(r=>setTimeout(r,200));
+      if(!pdfRef.current) throw new Error("PDFを作成できませんでした。もう一度お試しください。");
+      const blob=await buildShiftPdf(pdfRef.current);
+      pdfCache.current={key:shareKey,blob};
+      return blob;
+    } finally { setPdfRender(false); }
+  }
+  async function getShareUrl(){
+    if(share.url&&share.key===shareKey) return share;
+    setShare(p=>({...p,busy:"PDFを作成しています…",error:""}));
+    try{
+      const blob=await makePdf();
+      setShare(p=>({...p,busy:"共有用にアップロードしています…"}));
+      const j=await uploadShiftPdf(blob);
+      const exp=new Date(j.expires_at); const expires=`${exp.getMonth()+1}月${exp.getDate()}日`;
+      const next={busy:"",url:j.url,expires,key:shareKey,error:"",qr:false,copied:false};
+      setShare(next); return next;
+    }catch(e){ setShare(p=>({...p,busy:"",error:e.message||String(e)})); return null; }
+  }
+  const shareText=(s)=>`${shareTitle}です。\n下のリンクからPDFで見られます（${s.expires}まで）。\n${s.url}`;
+  async function shareQR(){ const s=await getShareUrl(); if(s) setShare(p=>({...p,qr:true})); }
+  async function shareLINE(){
+    const w=window.open("about:blank","_blank");
+    const s=await getShareUrl();
+    if(!s){ w&&w.close(); return; }
+    const u="https://line.me/R/share?text="+encodeURIComponent(shareText(s));
+    if(w) w.location.href=u; else window.open(u,"_blank");
+  }
+  async function shareMail(){
+    const s=await getShareUrl(); if(!s) return;
+    location.href="mailto:?subject="+encodeURIComponent(shareTitle)+"&body="+encodeURIComponent(shareText(s));
+  }
+  async function shareCopy(){
+    const s=await getShareUrl(); if(!s) return;
+    if(await copyText(shareText(s))) setShare(p=>({...p,copied:true}));
+    else prompt("コピーしてください",s.url);
+  }
+  // iPad：PDFをPCに一時的に置き、「PDFを開く」リンクを出す（タップ → Safariの共有ボタン → ファイルに保存／iCloud Drive・AirDrop）
+  async function preparePdfLink(){
+    setShare(p=>({...p,busy:"PDFを作成しています…",error:""}));
+    try{
+      const blob=await makePdf();
+      const url=await stagePdf(blob,pdfName);
+      setPdfLink({key:shareKey,url});
+      setShare(p=>({...p,busy:""}));
+    }catch(e){ setShare(p=>({...p,busy:"",error:e.message||String(e)})); }
+  }
+  // 端末の共有メニュー（iCloud Drive・AirDrop・メッセージ・メールなど）にPDFを渡す
+  async function shareSheet(){
+    if(!canSheet) return preparePdfLink();
+    const cached=pdfCache.current.key===shareKey&&pdfCache.current.blob;
+    try{
+      if(!cached) setShare(p=>({...p,busy:"PDFを作成しています…",error:""}));
+      const blob=await makePdf();
+      setShare(p=>({...p,busy:""}));
+      const file=new File([blob],pdfName,{type:"application/pdf"});
+      await navigator.share({files:[file],title:shareTitle});
+      setSheetReady("");
+    }catch(e){
+      if(e&&e.name==="AbortError"){ setSheetReady(""); return; }   // 共有メニューを閉じただけ
+      if(e&&e.name==="NotAllowedError"){                            // PDF作成に時間がかかり、ボタン操作の扱いが切れた
+        setSheetReady(shareKey); setShare(p=>({...p,busy:""})); return;
+      }
+      setShare(p=>({...p,busy:"",error:e.message||String(e)}));
+    }
+  }
+  async function savePdf(){
+    if(IS_IOS) return preparePdfLink();   // iPadではダウンロードが使えない（ホーム画面から開いたとき等）ため
+    setShare(p=>({...p,busy:"PDFを作成しています…",error:""}));
+    try{ const blob=await makePdf(); downloadBlob(blob,pdfName); setShare(p=>({...p,busy:""})); }
+    catch(e){ setShare(p=>({...p,busy:"",error:e.message||String(e)})); }
+  }
+  function doPrint(){
+    const pw = document.getElementById("__pw__");
+    if (!pw) return;
+
+    const isLandscape = fmt.includes("landscape");
+    const pageSize = isLandscape ? "A4 landscape" : "A4 portrait";
+
+    // __pw__ の内容を新ウィンドウにコピーして印刷
+    const win = window.open("", "_blank", "width=900,height=700");
+    if (!win) { alert("ポップアップをブロックしています。ブラウザの設定を確認してください。"); return; }
+
+    win.document.write(`<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>シフト表</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@300;400;500;700&family=DM+Sans:wght@400;600;700&display=swap">
+<style>
+${THEME_CSS}
+@page { size: ${pageSize}; margin: 0; }
+* { box-sizing: border-box; margin: 0; padding: 0; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+body { background: #fff; font-family: 'Noto Sans JP', sans-serif; }
+table { border-collapse: collapse; }
+</style>
+</head>
+<body>
+${pw.innerHTML}
+</body>
+</html>`);
+
+    win.document.close();
+
+    // フォント読み込み後に1回だけ印刷（onload と予備のタイマーで2回印刷されないように）
+    let printed = false;
+    const go = () => {
+      if (printed || win.closed) return;
+      printed = true;
+      win.print();
+      // iPadは印刷画面を出したまま処理が進むので、自動で閉じると印刷が取り消される
+      if (!IS_IOS) setTimeout(() => { try { win.close(); } catch(_){} }, 1000);
+    };
+    win.onload = () => setTimeout(go, 800);
+    setTimeout(go, 2000);  // onload が発火しない場合の予備
+  }
+  const dates=fmt.includes("weekly")?weekDates:monthDates;
+  const isLS=fmt.includes("landscape")||fmt==="monthly-front-ls";
+  const cellW=isLS?"17pt":"21pt";
+  const nameW=isLS?"42pt":"46pt";
+  function PT({dates, deptIds=null}){
+    const fs = isLS ? "7.5pt" : "8pt";
+    const fsTime = isLS ? "7pt" : "7.5pt";
+    return(
+      <table style={{borderCollapse:"collapse",width:"100%",tableLayout:"fixed",fontSize:fs}}>
+        <thead><tr>
+          {/* No */}
+          <th style={{background:"#000",color:"#fff",padding:"4pt 2pt",width:"14pt",fontSize:"7pt",border:"0.5pt solid #000",textAlign:"center"}}>No</th>
+          {/* 氏名 */}
+          <th style={{background:"#000",color:"#fff",padding:"4pt 4pt",width:nameW,textAlign:"center",border:"0.5pt solid #000",fontWeight:700}}>氏名</th>
+          {/* 入出ラベル */}
+          <th style={{background:"#333",color:"#fff",padding:"1pt",width:"10pt",border:"0.5pt solid #000",fontSize:"5pt"}}>
+            <div style={{display:"flex",flexDirection:"column",fontWeight:900,gap:"1pt",alignItems:"center"}}>
+              <span>入</span><span>出</span>
+            </div>
+          </th>
+          {/* 日付 */}
+          {dates.map(d=>{
+            const dow=d.getDay();
+            const tod=isToday(d);
+            const isSun=dow===0; const isSat=dow===6;
+            return(
+              <th key={d.toISOString()} style={{
+                padding:"3pt 0",textAlign:"center",
+                background: tod?"#000": isSun?"#555": isSat?"#888":"#000",
+                color:"#fff",
+                fontSize:"8pt",fontWeight:700,
+                border:"0.5pt solid #000",width:cellW,
+                borderBottom: isSun||isSat ? "2pt solid #fff" : "0.5pt solid #000",
+              }}>
+                <div style={{fontWeight:900}}>{viewMode==="weekly"?`${d.getMonth()+1}/${d.getDate()}`:d.getDate()}</div>
+                <div style={{fontSize:"6.5pt",opacity:.85}}>{isSun?"㊐":isSat?"㊏":JP_WD[dow]}</div>
+              </th>
+            );
+          })}
+          {/* 合計 */}
+          <th style={{background:"#000",color:"#fff",padding:"4pt 2pt",width:"24pt",fontSize:"7pt",borderLeft:"1.5pt solid #000",border:"0.5pt solid #000",textAlign:"center"}}>計</th>
+        </tr></thead>
+        <tbody>
+          {staffByDept.filter(dept=>!deptIds||deptIds.includes(dept.id)).map(dept=>{
+            if(dept.members.length===0) return null;
+            return[
+              <tr key={`d-${dept.id}`}>
+                <td colSpan={dates.length+4} style={{
+                  padding:"4pt 5pt",fontSize:"8.5pt",fontWeight:900,
+                  background:"#e8e8e8",color:"#000",
+                  borderLeft:"3pt solid #000",
+                  borderTop:"1pt solid #000",borderBottom:"1pt solid #000",
+                  letterSpacing:".06em",
+                }}>■ {dept.label}</td>
+              </tr>,
+              ...dept.members.map((s,ri)=>{
+                const sm=summary.find(x=>x.id===s.id);
+                const rowBg="#fff";
+                return(
+                  <tr key={s.id} style={{background:"#fff",borderTop:"1pt solid #555",borderBottom:"1pt solid #555"}}>
+                    {/* No */}
+                    <td style={{textAlign:"center",fontSize:"7pt",color:"#555",border:"0.5pt solid #555",padding:"5pt 1pt",background:"#fff"}}>{s.no}</td>
+                    {/* 氏名 */}
+                    <td style={{padding:"5pt 2pt",fontWeight:700,fontSize:"9pt",textAlign:"center",border:"0.5pt solid #ccc",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",background:"#fff"}}>{s.name}</td>
+                    {/* 入出 */}
+                    <td style={{border:"0.5pt solid #555",padding:0,background:"#ebebeb"}}>
+                      <div style={{display:"flex",flexDirection:"column",fontSize:"6.5pt",fontWeight:900,alignItems:"center"}}>
+                        <span style={{padding:"3pt 2pt",borderBottom:"0.3pt solid #bbb"}}>入</span>
+                        <span style={{padding:"3pt 2pt"}}>出</span>
+                      </div>
+                    </td>
+                    {/* シフトセル */}
+                    {dates.map(d=>{
+                      const leaveD = s.leaveDate ? parseYmd(s.leaveDate) : null;
+                      const afterLeave = leaveD && d > leaveD;
+                      const eff = afterLeave ? null : getEffective(s,d);
+                      const b = eff?.blockId ? findBlock(eff.blockId,s.timeBlocks,globalTemplates) : null;
+                      const dow = d.getDay();
+                      const isSun=dow===0; const isSat=dow===6;
+                      // 白黒向け背景: 日曜=濃グレー, 土曜=中グレー, 平日=通常交互, 退職後=ハッチ
+                      const cellBg = afterLeave
+                        ? "#c8c8c8"
+                        : eff?.isOff
+                          ? "#e8e8e8"
+                          : isSun ? "#d0d0d0"
+                          : isSat ? "#e0e0e0"
+                          : "#fff";
+                      return(
+                        <td key={d.toISOString()} style={{
+                          padding:0,
+                          background:cellBg,
+                          border:`0.5pt solid ${isSun||isSat?"#555":"#888"}`,
+                          borderLeft: isSun ? "1pt solid #333" : isSat ? "0.5pt solid #555" : "0.5pt solid #888",
+                          textAlign:"center",
+                          verticalAlign:"middle",
+                        }}>
+                          {afterLeave?(
+                            <div style={{fontSize:"7pt",color:"#999",textAlign:"center",lineHeight:1}}>×</div>
+                          ):eff?.isOff?(
+                            b?.id==="off2"?(
+                              <div style={{
+                                fontSize:"8pt",fontWeight:900,color:"#000",
+                                border:"1pt solid #000",margin:"1pt auto",
+                                width:"10pt",height:"10pt",
+                                display:"flex",alignItems:"center",justifyContent:"center",
+                                borderRadius:"50%",
+                              }}>有</div>
+                            ):b?.id==="off3"?(
+                              <div style={{
+                                fontSize:"8pt",fontWeight:900,color:"#000",
+                                border:"1pt solid #000",margin:"1pt auto",
+                                width:"10pt",height:"10pt",
+                                display:"flex",alignItems:"center",justifyContent:"center",
+                                borderRadius:"50%",
+                              }}>欠</div>
+                            ):null
+                          ):(
+                            <div style={{display:"flex",flexDirection:"column",fontSize:fsTime,fontFamily:"monospace",fontWeight:700,lineHeight:1.6}}>
+                              <span style={{padding:"2pt 0",borderBottom:"0.3pt solid #bbb",color:"#000"}}>{eff?.inTime?eff.inTime.replace(/^0/,""):""}</span>
+                              <span style={{padding:"2pt 0",color:"#000"}}>{eff?.outTime?eff.outTime.replace(/^0/,""):""}</span>
+                            </div>
+                          )}
+                        </td>
+                      );
+                    })}
+                    {/* 合計 */}
+                    <td style={{
+                      textAlign:"center",fontFamily:"monospace",fontWeight:900,
+                      fontSize:"7.5pt",color:"#000",background:"#e8e8e8",
+                      borderLeft:"1.5pt solid #000",border:"0.5pt solid #555",
+                      padding:"5pt 1pt",
+                    }}>{sm?`${sm.totalH}h`:""}</td>
+                  </tr>
+                );
+              }),
+            ];
+          })}
+        </tbody>
+      </table>
+    );
+  }
+  function PageHdr({label}){
+    return(
+      <div style={{display:"flex",alignItems:"center",marginBottom:"4pt",borderBottom:"0.5pt solid #ccc",paddingBottom:"3pt"}}>
+        <span style={{flex:1,fontSize:"9.5pt",fontWeight:700,color:"#000"}}>{label}</span>
+        <span style={{flex:1,textAlign:"center",fontSize:"11pt",fontWeight:900,color:"#000",letterSpacing:".05em"}}>HOTEL ELDIA 神戸店</span>
+        <span style={{flex:1,textAlign:"right",fontSize:"6.5pt",color:"#555"}}>出力日: {new Date().toLocaleDateString("ja-JP")}</span>
+      </div>
+    );
+  }
+  const half1=monthDates.slice(0,15);
+  const half2=monthDates.slice(15);
+  const selectedChunks = halfSel==="first"?[half1]:halfSel==="second"?[half2]:[half1,half2];
+  // 選択中の部門ID一覧
+  const selDepts = Object.entries(deptSel).filter(([,v])=>v).map(([k])=>k);
+
+  const printContent=fmt==="weekly-dept"?(
+    // 週表示A4縦（部門別）: 選択部門ごとに1枚
+    <>
+      {selDepts.map(did=>{
+        const dlabel = did==="make"?"メイク":did==="kitchen"?"キッチン":"フロント";
+        return(
+          <div key={did} style={{width:"210mm",minHeight:"297mm",padding:"7mm",background:"#fff",pageBreakAfter:"always",boxSizing:"border-box",fontFamily:"var(--font)"}}>
+            <PageHdr label={`${weekDates[0].getFullYear()}年 シフト表　${dlabel}　${weekLabel}`}/>
+            <PT dates={weekDates} deptIds={[did]}/>
+          </div>
+        );
+      })}
+    </>
+  ):fmt==="monthly-dept-v"?(
+    // 月表示A4縦（部門別）: 選択部門ごと × 半月
+    <>
+      {selDepts.map(did=>{
+        const dlabel = did==="make"?"メイク":did==="kitchen"?"キッチン":"フロント";
+        return selectedChunks.map((chunk,ci)=>(
+          <div key={`${did}-${ci}`} style={{width:"210mm",minHeight:"297mm",padding:"7mm",background:"#fff",pageBreakAfter:"always",boxSizing:"border-box",fontFamily:"var(--font)"}}>
+            <PageHdr label={`${year}年 ${month+1}月 シフト表　${dlabel}　${chunk[0].getDate()}日〜${chunk[chunk.length-1].getDate()}日`}/>
+            <PT dates={chunk} deptIds={[did]}/>
+          </div>
+        ));
+      })}
+    </>
+  ):fmt==="monthly-makekitchen"?(
+    // 月表示A4縦（メイク・厨房まとめ）: 半月ずつ
+    <>
+      {selectedChunks.map((chunk,ci)=>(
+        <div key={ci} style={{width:"210mm",minHeight:"297mm",padding:"7mm",background:"#fff",pageBreakAfter:"always",boxSizing:"border-box",fontFamily:"var(--font)"}}>
+          <PageHdr label={`${year}年 ${month+1}月 シフト表　メイク・キッチン　${chunk[0].getDate()}日〜${chunk[chunk.length-1].getDate()}日`}/>
+          <PT dates={chunk} deptIds={["make","kitchen"]}/>
+        </div>
+      ))}
+    </>
+  ):fmt==="monthly-front-ls"?(
+    // 月表示A4横（フロントのみ 上=前半・下=後半 1枚）
+    <div style={{width:"297mm",minHeight:"210mm",padding:"6mm",background:"#fff",boxSizing:"border-box",fontFamily:"var(--font)"}}>
+      <PageHdr label={`${year}年 ${month+1}月 シフト表　フロント`}/>
+      <div style={{marginBottom:"4pt",fontSize:"7pt",fontWeight:700,color:"#555"}}>前半（1〜{half1[half1.length-1].getDate()}日）</div>
+      <PT dates={half1} deptIds={["front"]}/>
+      <div style={{marginTop:"6pt",marginBottom:"4pt",fontSize:"7pt",fontWeight:700,color:"#555",borderTop:"0.5pt solid #ccc",paddingTop:"4pt"}}>後半（{half2[0].getDate()}〜{half2[half2.length-1].getDate()}日）</div>
+      <PT dates={half2} deptIds={["front"]}/>
+    </div>
+  ):(
+    // weekly-landscape fallback
+    <div style={{width:"297mm",minHeight:"210mm",padding:"6mm",background:"#fff",boxSizing:"border-box",fontFamily:"var(--font)"}}>
+      <div style={{display:"flex",alignItems:"center",marginBottom:"4pt",borderBottom:"0.5pt solid #ccc",paddingBottom:"3pt"}}>
+        <span style={{flex:1,fontSize:"9.5pt",fontWeight:700,color:"#000"}}>{weekDates[0].getFullYear()}年 シフト表　{weekLabel}</span>
+        <span style={{flex:1,textAlign:"center",fontSize:"10pt",fontWeight:900,color:"#000",letterSpacing:".05em"}}>HOTEL ELDIA 神戸店</span>
+        <span style={{flex:1,textAlign:"right",fontSize:"6.5pt",color:"#555"}}>出力日: {new Date().toLocaleDateString("ja-JP")}</span>
+      </div>
+      <PT dates={weekDates} deptIds={selDepts}/>
+    </div>
+  );
+  const SW=isLS?297:210; const SH=isLS?210:297; const SC=isLS?0.38:0.45;
+  return(
+    <>
+      <div id="__pw__" style={{display:"none",fontFamily:"var(--font)"}}>
+        <style>{`@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@300;400;500;700&family=DM+Sans:wght@400;600;700&display=swap');*{box-sizing:border-box;margin:0;padding:0}table{border-collapse:collapse}`}</style>
+        {printContent}
+      </div>
+      {pdfRender&&<div ref={pdfRef} aria-hidden="true" style={{position:"fixed",left:-30000,top:0,background:"#fff",fontFamily:"var(--font)"}}>{printContent}</div>}
+      {share.qr&&share.url&&(
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.55)",zIndex:9600,display:"flex",alignItems:"center",justifyContent:"center"}} onClick={e=>{if(e.target===e.currentTarget)setShare(p=>({...p,qr:false}));}}>
+          <div role="dialog" aria-label="QRコード" style={{background:"#fff",borderRadius:14,padding:24,width:360,maxWidth:"92vw",textAlign:"center",boxShadow:"0 20px 60px rgba(0,0,0,.35)"}}>
+            <div style={{fontWeight:700,fontSize:16,marginBottom:4}}>{shareTitle}</div>
+            <div style={{fontSize:12.5,color:"var(--muted)",marginBottom:12}}>スマホのカメラで読み取ると、PDFで開きます（{share.expires}まで）</div>
+            <div style={{width:280,height:280,margin:"0 auto"}} dangerouslySetInnerHTML={{__html:qrSvg(share.url)}}/>
+            <div style={{fontSize:11,color:"var(--muted)",wordBreak:"break-all",margin:"10px 0 14px"}}>{share.url}</div>
+            <button className="btn sec" onClick={()=>setShare(p=>({...p,qr:false}))}>閉じる</button>
+          </div>
+        </div>
+      )}
+      <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.5)",zIndex:9000,display:"flex",alignItems:"center",justifyContent:"center"}} onClick={e=>{if(e.target===e.currentTarget)onClose();}}>
+        <div style={{background:"#fff",borderRadius:14,padding:24,width:660,maxWidth:"95vw",maxHeight:"90vh",overflow:"auto",boxShadow:"0 20px 60px rgba(0,0,0,.3)"}}>
+          <div style={{display:"flex",alignItems:"center",marginBottom:20}}>
+            <div style={{fontWeight:700,fontSize:16,color:"var(--ink)"}}>🖨 印刷・PDF出力</div>
+            <button onClick={onClose} style={{marginLeft:"auto",background:"none",border:"none",fontSize:20,color:"#94a3b8",cursor:"pointer"}}>×</button>
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:16}}>
+            {[
+              ["weekly-dept",    "📄","週表示 A4縦（部門別）",  "選択部門ごとに1枚"],
+              ["monthly-dept-v", "📄","月表示 A4縦（部門別）",  "選択部門×半月"],
+              ["monthly-makekitchen","📄","月表示 A4縦（メイク・厨房）","2部門まとめて半月×2枚"],
+              ["monthly-front-ls","📋","月表示 A4横（フロント）", "上=前半・下=後半 1枚"],
+            ].map(([v,ic,l,s])=>(
+              <button key={v} onClick={()=>setFmt(v)} style={{padding:"10px 12px",borderRadius:8,cursor:"pointer",fontFamily:"var(--font)",fontSize:12.5,fontWeight:700,border:`2px solid ${fmt===v?"var(--pri)":"var(--line)"}`,background:fmt===v?"#fffbf0":"#fff",color:fmt===v?"var(--ink)":"#64748b",display:"flex",alignItems:"center",gap:8,textAlign:"left"}}>
+                <span style={{fontSize:22}}>{ic}</span>
+                <div><div>{l}</div><div style={{fontSize:10,fontWeight:400,color:"#94a3b8"}}>{s}</div></div>
+              </button>
+            ))}
+          </div>
+          <div style={{background:"#e2e8f0",borderRadius:8,padding:12,marginBottom:20}}>
+            <div style={{fontSize:11,color:"#64748b",fontWeight:600,marginBottom:8}}>プレビュー</div>
+            <div style={{overflow:"hidden",height:`${SH*SC}mm`,width:`${SW*SC}mm`,maxWidth:"100%",border:"1px solid #cbd5e1",borderRadius:3,background:"#fff"}}>
+              <div style={{width:`${SW}mm`,height:`${SH}mm`,transform:`scale(${SC})`,transformOrigin:"top left",fontFamily:"var(--font)",pointerEvents:"none"}}>{printContent}</div>
+            </div>
+          </div>
+          {/* 部門選択 */}
+          {(fmt==="weekly-dept"||fmt==="monthly-dept-v")&&(
+            <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12,padding:"10px 14px",background:"var(--surf2)",borderRadius:8,border:"1px solid #e2e8f0"}}>
+              <span style={{fontSize:12.5,fontWeight:700,color:"var(--ink)",flexShrink:0}}>部門選択：</span>
+              <div style={{display:"flex",gap:6}}>
+                {[["make","メイク"],["kitchen","キッチン"],["front","フロント"]].map(([id,label])=>(
+                  <button key={id} onClick={()=>setDeptSel(p=>({...p,[id]:!p[id]}))} style={{
+                    padding:"5px 12px",borderRadius:7,cursor:"pointer",
+                    border:`1.5px solid ${deptSel[id]?"var(--ink)":"var(--line)"}`,
+                    background:deptSel[id]?"var(--ink)":"#fff",
+                    color:deptSel[id]?"#fff":"#475569",
+                    fontSize:12,fontWeight:deptSel[id]?700:400,
+                    fontFamily:"var(--font)",transition:"all .15s",
+                  }}>{label}</button>
+                ))}
+              </div>
+            </div>
+          )}
+          {/* 月表示の前半/後半セレクター */}
+          {(fmt.includes("monthly")&&fmt!=="monthly-front-ls")&&(
+            <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12,padding:"10px 14px",background:"var(--surf2)",borderRadius:8,border:"1px solid #e2e8f0"}}>
+              <span style={{fontSize:12.5,fontWeight:700,color:"var(--ink)",flexShrink:0}}>印刷範囲：</span>
+              <div style={{display:"flex",gap:6}}>
+                {[["both","前半+後半（両方）"],["first","前半のみ（1〜15日）"],["second","後半のみ（16日〜末日）"]].map(([v,l])=>(
+                  <button key={v} onClick={()=>setHalfSel(v)} style={{
+                    padding:"5px 12px",borderRadius:7,cursor:"pointer",
+                    border:`1.5px solid ${halfSel===v?"var(--ink)":"var(--line)"}`,
+                    background:halfSel===v?"var(--ink)":"#fff",
+                    color:halfSel===v?"#fff":"#475569",
+                    fontSize:12,fontWeight:halfSel===v?700:400,
+                    fontFamily:"var(--font)",transition:"all .15s",
+                  }}>{l}</button>
+                ))}
+              </div>
+            </div>
+          )}
+          {/* 共有 */}
+          <div style={{border:"1px solid var(--line)",borderRadius:10,padding:"12px 14px",marginBottom:14}}>
+            <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+              <span style={{fontSize:13,fontWeight:700,marginRight:4}}>共有</span>
+              <button className="btn sec sm" disabled={!!share.busy} onClick={shareQR}>QRコード</button>
+              <button className="btn sec sm" disabled={!!share.busy} onClick={shareLINE}>LINE</button>
+              <button className="btn sec sm" disabled={!!share.busy} onClick={shareMail}>メール</button>
+              <button className="btn sec sm" disabled={!!share.busy} onClick={shareCopy}>{share.copied&&share.key===shareKey?"コピーしました":"リンクをコピー"}</button>
+              <button className="btn sec sm" disabled={!!share.busy} onClick={savePdf}>PDFを保存</button>
+              {(canSheet||IS_IOS)&&(
+                <button className={`btn sm${sheetReady===shareKey?"":" sec"}`} disabled={!!share.busy} onClick={shareSheet}>
+                  {sheetReady===shareKey?"共有メニューを開く":"iCloud・AirDrop…"}
+                </button>
+              )}
+            </div>
+            {pdfLink&&pdfLink.key===shareKey&&!share.busy&&(
+              <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",marginTop:10,padding:"10px 12px",background:"var(--pri-soft)",borderRadius:8}}>
+                <a className="btn sm" href={pdfLink.url} target="_blank" rel="noopener">📄 PDFを開く</a>
+                <span style={{fontSize:12.5,lineHeight:1.6,color:"var(--ink-2)"}}>開いた画面の共有ボタン（□↑）→「ファイルに保存」でiCloud Driveに保存、またはAirDrop・メッセージで送れます（30分以内に開いてください）</span>
+              </div>
+            )}
+            <div style={{fontSize:12,marginTop:8,color:share.error?"var(--sun)":"var(--muted)",lineHeight:1.6}}>
+              {share.busy||share.error||(sheetReady===shareKey?"PDFの準備ができました。「共有メニューを開く」を押してください。":share.url&&share.key===shareKey
+                ?`共有リンクを作成済み（${share.expires}まで有効）。内容を変えたら、もう一度押すと新しいリンクになります。`
+                :"上で選んだ形式のシフト表をPDFにして共有します。リンクは約2か月で開けなくなります。")}
+            </div>
+          </div>
+          <div style={{background:"var(--surf2)",borderRadius:8,padding:"10px 14px",marginBottom:20,fontSize:12,color:"#475569",lineHeight:1.8}}>
+            <strong style={{color:"var(--ink)"}}>印刷のヒント</strong><br/>・余白「なし」推奨　・「背景グラフィックを印刷する」ON
+          </div>
+          <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
+            <button onClick={onClose} style={{background:"#fff",color:"var(--ink)",border:"1.5px solid var(--line)",padding:"9px 20px",borderRadius:8,fontSize:13,cursor:"pointer",fontFamily:"var(--font)"}}>キャンセル</button>
+            <button onClick={doPrint} style={{background:"var(--pri)",color:"#fff",border:"none",padding:"9px 24px",borderRadius:8,fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"var(--font)"}}>🖨 印刷 / PDF保存</button>
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
+
+
 // ══════════════════════════════════════════════════════════════════════════════
 // ─── Main App ─────────────────────────────────────────────────────────────────
 // ══════════════════════════════════════════════════════════════════════════════
@@ -1704,6 +2220,7 @@ function ShiftApp() {
   const [cellData,setCellData]=useState({});
   const [dbStatus,setDbStatus]=useState("init"); // "init"|"loading"|"ok"|"offline"|"saving"
   const saveTimer = useRef(null);
+  const saving = useRef(false);   // サーバーへ保存中
   const [view,setView]=useState("grid");
   const [summaryTab,setSummaryTab]=useState("attendance");
   const [settingsTab,setSettingsTab]=useState("staff");
@@ -1761,19 +2278,24 @@ function ShiftApp() {
 
   // サーバーの最新内容を読み込んで画面に反映（読み込んだ内容は「保存済み」扱い）
   const SETTERS={staff:setStaff,globalTemplates:setGlobalTemplates,cellData:setCellData};
-  async function pullRemote(keys){
-    const vals=await Promise.all(keys.map(k=>dbLoad(k)));
-    keys.forEach((k,i)=>{ if(vals[i]!==null) SETTERS[k](vals[i]); });
+  // canApply: 読み込み中に画面で編集が始まっていたら false を返す（その編集を消さないよう、取り込みを見送る）
+  async function pullRemote(keys,canApply=()=>true){
+    const got=await Promise.all(keys.map(k=>dbFetch(k)));
+    if(!canApply()) return false;
+    keys.forEach((k,i)=>{ dbCommit(k,got[i]); if(got[i].value!==null) SETTERS[k](got[i].value); });
+    return true;
   }
+  const idle=()=>!saveTimer.current&&!saving.current;
 
   // 他の端末（PC・iPad）での変更を15秒ごとに確認して取り込む
   useEffect(()=>{
     const t=setInterval(async()=>{
-      if(saveTimer.current||document.hidden) return;   // 自分の保存待ちがある間は待つ
+      if(!idle()||document.hidden) return;   // 自分の保存待ち・保存中は待つ
       try{
         const revs=await dbRevs();
+        if(!idle()) return;
         const changed=Object.keys(SETTERS).filter(k=>(revs[k]||0)!==(REVS[k]||0));
-        if(changed.length) await pullRemote(changed);
+        if(changed.length) await pullRemote(changed,idle);
       }catch(e){}
     },15000);
     return ()=>clearInterval(t);
@@ -1787,11 +2309,15 @@ function ShiftApp() {
     saveTimer.current = setTimeout(async ()=>{
       saveTimer.current = null;
       const keys=["staff","globalTemplates","cellData"];
-      const results = await Promise.all([
-        dbSave("staff", staff),
-        dbSave("globalTemplates", globalTemplates),
-        dbSave("cellData", cellData),
-      ]);
+      saving.current = true;
+      let results;
+      try{
+        results = await Promise.all([
+          dbSave("staff", staff),
+          dbSave("globalTemplates", globalTemplates),
+          dbSave("cellData", cellData),
+        ]);
+      } finally { saving.current = false; }
       const conflicted=keys.filter((k,i)=>results[i]==="conflict");
       if(conflicted.length){
         try{ await pullRemote(conflicted); }catch(e){}
@@ -1848,7 +2374,7 @@ function ShiftApp() {
   // 時間帯別在籍チェック
   const HOURS=[9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,0,1,2,3,4,5,6,7,8];
   function isWorkingAtHour(s,dateObj,hour){
-    const leaveDate=s.leaveDate?new Date(s.leaveDate):null;
+    const leaveDate=s.leaveDate?parseYmd(s.leaveDate):null;
     if(leaveDate&&dateObj>leaveDate) return false;
     const eff=getEffective(s,dateObj);
     if(!eff||eff.isOff||!eff.inTime||!eff.outTime) return false;
@@ -1916,7 +2442,8 @@ function ShiftApp() {
     if (showInactive) return true;
     if (!s.leaveDate) return s.active;
     // 退職日がある場合: 退職月（当月含む）は表示、翌月以降は非表示
-    const ld = new Date(s.leaveDate);
+    const ld = parseYmd(s.leaveDate);
+    if (!ld) return s.active;
     const leaveYear  = ld.getFullYear();
     const leaveMonth = ld.getMonth();
     // 表示中の月が退職月以前なら表示
@@ -1941,7 +2468,7 @@ function ShiftApp() {
 
   const summary=useMemo(()=>staff.map(s=>{
     let totalH=0,workDays=0;
-    const leaveDate=s.leaveDate?new Date(s.leaveDate):null;
+    const leaveDate=s.leaveDate?parseYmd(s.leaveDate):null;
     monthDates.forEach(d=>{
       if(leaveDate&&d>leaveDate) return; // 退職日以降はスキップ
       const eff=getEffective(s,d);
@@ -1958,7 +2485,7 @@ function ShiftApp() {
   // 週別合計（週表示の合計列用）
   const weeklySummary=useMemo(()=>staff.map(s=>{
     let totalH=0,workDays=0;
-    const leaveDate=s.leaveDate?new Date(s.leaveDate):null;
+    const leaveDate=s.leaveDate?parseYmd(s.leaveDate):null;
     weekDates.forEach(d=>{
       if(leaveDate&&d>leaveDate) return; // 退職日以降はスキップ
       const eff=getEffective(s,d);
@@ -1979,8 +2506,8 @@ function ShiftApp() {
   // 通常（昼）×1.0 / 通常（深夜22-5時）×1.25 / 時間外（昼）×1.25 / 時間外（深夜）×1.5
   const salary=useMemo(()=>visibleStaff.map(s=>{
     const rate=s.hourlyRate||0;
-    const leaveDate=s.leaveDate?new Date(s.leaveDate):null;
-    const joinDate=salaryOptJoin&&s.joinDate?new Date(s.joinDate):null;
+    const leaveDate=s.leaveDate?parseYmd(s.leaveDate):null;
+    const joinDate=salaryOptJoin&&s.joinDate?parseYmd(s.joinDate):null;
     const applyRound=v=>salaryOptRound?roundHalf(v):v;
     let totalRegDayH=0,totalRegNightH=0,totalDailyOTDayH=0,totalDailyOTNightH=0;
     let paidH=0,paidDays=0;
@@ -2064,8 +2591,8 @@ function ShiftApp() {
   // 給与計算明細（日別・週別内訳）— クリックで個別展開
   const salaryDetail=useMemo(()=>{
     return visibleStaff.map(s=>{
-      const leaveDate=s.leaveDate?new Date(s.leaveDate):null;
-      const joinDate=salaryOptJoin&&s.joinDate?new Date(s.joinDate):null;
+      const leaveDate=s.leaveDate?parseYmd(s.leaveDate):null;
+      const joinDate=salaryOptJoin&&s.joinDate?parseYmd(s.joinDate):null;
       const wkMap={};
       monthDates.forEach(d=>{
         const wk=ymd(getMondayOf(d));
@@ -2276,424 +2803,6 @@ ${body ? body.innerHTML : ""}
   );
 }
 
-
-  // ─── Print ────────────────────────────────────────────────────────────────
-  function PrintModal({onClose, year, month, monthDates, weekDates, weekLabel, viewMode, staffByDept, summary, globalTemplates, getEffective, findBlock}){
-    const [fmt,setFmt]=useState("weekly-portrait");
-    const [halfSel,setHalfSel]=useState("both"); // "both"|"first"|"second"
-    const [deptSel,setDeptSel]=useState({make:true,kitchen:true,front:true}); // 部門選択
-    const [share,setShare]=useState({busy:"",url:"",expires:"",key:"",error:"",qr:false,copied:false});
-    const [pdfRender,setPdfRender]=useState(false);
-    const pdfRef=useRef(null);
-    const shareKey=JSON.stringify([fmt,halfSel,deptSel]);
-    const shareTitle=fmt.includes("weekly")?`シフト表 ${weekLabel}`:`シフト表 ${year}年${month+1}月`;
-    async function makePdf(){
-      setPdfRender(true);
-      await new Promise(r=>setTimeout(r,300));      // オフスクリーンに描画されるのを待つ
-      try{ return await buildShiftPdf(pdfRef.current); } finally { setPdfRender(false); }
-    }
-    async function getShareUrl(){
-      if(share.url&&share.key===shareKey) return share;
-      setShare(p=>({...p,busy:"PDFを作成しています…",error:""}));
-      try{
-        const blob=await makePdf();
-        setShare(p=>({...p,busy:"共有用にアップロードしています…"}));
-        const j=await uploadShiftPdf(blob);
-        const exp=new Date(j.expires_at); const expires=`${exp.getMonth()+1}月${exp.getDate()}日`;
-        const next={busy:"",url:j.url,expires,key:shareKey,error:"",qr:false,copied:false};
-        setShare(next); return next;
-      }catch(e){ setShare(p=>({...p,busy:"",error:e.message||String(e)})); return null; }
-    }
-    const shareText=(s)=>`${shareTitle}です。\n下のリンクからPDFで見られます（${s.expires}まで）。\n${s.url}`;
-    async function shareQR(){ const s=await getShareUrl(); if(s) setShare(p=>({...p,qr:true})); }
-    async function shareLINE(){
-      const w=window.open("about:blank","_blank");
-      const s=await getShareUrl();
-      if(!s){ w&&w.close(); return; }
-      const u="https://line.me/R/share?text="+encodeURIComponent(shareText(s));
-      if(w) w.location.href=u; else window.open(u,"_blank");
-    }
-    async function shareMail(){
-      const s=await getShareUrl(); if(!s) return;
-      location.href="mailto:?subject="+encodeURIComponent(shareTitle)+"&body="+encodeURIComponent(shareText(s));
-    }
-    async function shareCopy(){
-      const s=await getShareUrl(); if(!s) return;
-      try{ await navigator.clipboard.writeText(shareText(s)); setShare(p=>({...p,copied:true})); }
-      catch(e){ prompt("コピーしてください",s.url); }
-    }
-    async function savePdf(){
-      setShare(p=>({...p,busy:"PDFを作成しています…",error:""}));
-      try{ const blob=await makePdf(); downloadBlob(blob,fmt.includes("weekly")?`シフト表_${ymd(weekDates[0])}の週.pdf`:`シフト表_${year}年${month+1}月.pdf`); setShare(p=>({...p,busy:""})); }
-      catch(e){ setShare(p=>({...p,busy:"",error:e.message||String(e)})); }
-    }
-    function doPrint(){
-      const pw = document.getElementById("__pw__");
-      if (!pw) return;
-
-      const isLandscape = fmt.includes("landscape");
-      const pageSize = isLandscape ? "A4 landscape" : "A4 portrait";
-
-      // __pw__ の内容を新ウィンドウにコピーして印刷
-      const win = window.open("", "_blank", "width=900,height=700");
-      if (!win) { alert("ポップアップをブロックしています。ブラウザの設定を確認してください。"); return; }
-
-      win.document.write(`<!DOCTYPE html>
-<html lang="ja">
-<head>
-<meta charset="UTF-8">
-<title>シフト表</title>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@300;400;500;700&family=DM+Sans:wght@400;600;700&display=swap">
-<style>
-${THEME_CSS}
-@page { size: ${pageSize}; margin: 0; }
-* { box-sizing: border-box; margin: 0; padding: 0; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-body { background: #fff; font-family: 'Noto Sans JP', sans-serif; }
-table { border-collapse: collapse; }
-</style>
-</head>
-<body>
-${pw.innerHTML}
-</body>
-</html>`);
-
-      win.document.close();
-
-      // フォント読み込み後に印刷
-      win.onload = function() {
-        setTimeout(() => {
-          win.print();
-          setTimeout(() => win.close(), 1000);
-        }, 800);
-      };
-      // onload が発火しない場合のフォールバック
-      setTimeout(() => {
-        if (!win.closed) {
-          win.print();
-          setTimeout(() => win.close(), 1000);
-        }
-      }, 2000);
-    }
-    const dates=fmt.includes("weekly")?weekDates:monthDates;
-    const isLS=fmt.includes("landscape")||fmt==="monthly-front-ls";
-    const cellW=isLS?"17pt":"21pt";
-    const nameW=isLS?"42pt":"46pt";
-    function PT({dates, deptIds=null}){
-      const fs = isLS ? "7.5pt" : "8pt";
-      const fsTime = isLS ? "7pt" : "7.5pt";
-      return(
-        <table style={{borderCollapse:"collapse",width:"100%",tableLayout:"fixed",fontSize:fs}}>
-          <thead><tr>
-            {/* No */}
-            <th style={{background:"#000",color:"#fff",padding:"4pt 2pt",width:"14pt",fontSize:"7pt",border:"0.5pt solid #000",textAlign:"center"}}>No</th>
-            {/* 氏名 */}
-            <th style={{background:"#000",color:"#fff",padding:"4pt 4pt",width:nameW,textAlign:"center",border:"0.5pt solid #000",fontWeight:700}}>氏名</th>
-            {/* 入出ラベル */}
-            <th style={{background:"#333",color:"#fff",padding:"1pt",width:"10pt",border:"0.5pt solid #000",fontSize:"5pt"}}>
-              <div style={{display:"flex",flexDirection:"column",fontWeight:900,gap:"1pt",alignItems:"center"}}>
-                <span>入</span><span>出</span>
-              </div>
-            </th>
-            {/* 日付 */}
-            {dates.map(d=>{
-              const dow=d.getDay();
-              const tod=isToday(d);
-              const isSun=dow===0; const isSat=dow===6;
-              return(
-                <th key={d.toISOString()} style={{
-                  padding:"3pt 0",textAlign:"center",
-                  background: tod?"#000": isSun?"#555": isSat?"#888":"#000",
-                  color:"#fff",
-                  fontSize:"8pt",fontWeight:700,
-                  border:"0.5pt solid #000",width:cellW,
-                  borderBottom: isSun||isSat ? "2pt solid #fff" : "0.5pt solid #000",
-                }}>
-                  <div style={{fontWeight:900}}>{viewMode==="weekly"?`${d.getMonth()+1}/${d.getDate()}`:d.getDate()}</div>
-                  <div style={{fontSize:"6.5pt",opacity:.85}}>{isSun?"㊐":isSat?"㊏":JP_WD[dow]}</div>
-                </th>
-              );
-            })}
-            {/* 合計 */}
-            <th style={{background:"#000",color:"#fff",padding:"4pt 2pt",width:"24pt",fontSize:"7pt",borderLeft:"1.5pt solid #000",border:"0.5pt solid #000",textAlign:"center"}}>計</th>
-          </tr></thead>
-          <tbody>
-            {staffByDept.filter(dept=>!deptIds||deptIds.includes(dept.id)).map(dept=>{
-              if(dept.members.length===0) return null;
-              return[
-                <tr key={`d-${dept.id}`}>
-                  <td colSpan={dates.length+4} style={{
-                    padding:"4pt 5pt",fontSize:"8.5pt",fontWeight:900,
-                    background:"#e8e8e8",color:"#000",
-                    borderLeft:"3pt solid #000",
-                    borderTop:"1pt solid #000",borderBottom:"1pt solid #000",
-                    letterSpacing:".06em",
-                  }}>■ {dept.label}</td>
-                </tr>,
-                ...dept.members.map((s,ri)=>{
-                  const sm=summary.find(x=>x.id===s.id);
-                  const rowBg="#fff";
-                  return(
-                    <tr key={s.id} style={{background:"#fff",borderTop:"1pt solid #555",borderBottom:"1pt solid #555"}}>
-                      {/* No */}
-                      <td style={{textAlign:"center",fontSize:"7pt",color:"#555",border:"0.5pt solid #555",padding:"5pt 1pt",background:"#fff"}}>{s.no}</td>
-                      {/* 氏名 */}
-                      <td style={{padding:"5pt 2pt",fontWeight:700,fontSize:"9pt",textAlign:"center",border:"0.5pt solid #ccc",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",background:"#fff"}}>{s.name}</td>
-                      {/* 入出 */}
-                      <td style={{border:"0.5pt solid #555",padding:0,background:"#ebebeb"}}>
-                        <div style={{display:"flex",flexDirection:"column",fontSize:"6.5pt",fontWeight:900,alignItems:"center"}}>
-                          <span style={{padding:"3pt 2pt",borderBottom:"0.3pt solid #bbb"}}>入</span>
-                          <span style={{padding:"3pt 2pt"}}>出</span>
-                        </div>
-                      </td>
-                      {/* シフトセル */}
-                      {dates.map(d=>{
-                        const leaveD = s.leaveDate ? new Date(s.leaveDate) : null;
-                        const afterLeave = leaveD && d > leaveD;
-                        const eff = afterLeave ? null : getEffective(s,d);
-                        const b = eff?.blockId ? findBlock(eff.blockId,s.timeBlocks,globalTemplates) : null;
-                        const dow = d.getDay();
-                        const isSun=dow===0; const isSat=dow===6;
-                        // 白黒向け背景: 日曜=濃グレー, 土曜=中グレー, 平日=通常交互, 退職後=ハッチ
-                        const cellBg = afterLeave
-                          ? "#c8c8c8"
-                          : eff?.isOff
-                            ? "#e8e8e8"
-                            : isSun ? "#d0d0d0"
-                            : isSat ? "#e0e0e0"
-                            : "#fff";
-                        return(
-                          <td key={d.toISOString()} style={{
-                            padding:0,
-                            background:cellBg,
-                            border:`0.5pt solid ${isSun||isSat?"#555":"#888"}`,
-                            borderLeft: isSun ? "1pt solid #333" : isSat ? "0.5pt solid #555" : "0.5pt solid #888",
-                            textAlign:"center",
-                            verticalAlign:"middle",
-                          }}>
-                            {afterLeave?(
-                              <div style={{fontSize:"7pt",color:"#999",textAlign:"center",lineHeight:1}}>×</div>
-                            ):eff?.isOff?(
-                              b?.id==="off2"?(
-                                <div style={{
-                                  fontSize:"8pt",fontWeight:900,color:"#000",
-                                  border:"1pt solid #000",margin:"1pt auto",
-                                  width:"10pt",height:"10pt",
-                                  display:"flex",alignItems:"center",justifyContent:"center",
-                                  borderRadius:"50%",
-                                }}>有</div>
-                              ):b?.id==="off3"?(
-                                <div style={{
-                                  fontSize:"8pt",fontWeight:900,color:"#000",
-                                  border:"1pt solid #000",margin:"1pt auto",
-                                  width:"10pt",height:"10pt",
-                                  display:"flex",alignItems:"center",justifyContent:"center",
-                                  borderRadius:"50%",
-                                }}>欠</div>
-                              ):null
-                            ):(
-                              <div style={{display:"flex",flexDirection:"column",fontSize:fsTime,fontFamily:"monospace",fontWeight:700,lineHeight:1.6}}>
-                                <span style={{padding:"2pt 0",borderBottom:"0.3pt solid #bbb",color:"#000"}}>{eff?.inTime?eff.inTime.replace(/^0/,""):""}</span>
-                                <span style={{padding:"2pt 0",color:"#000"}}>{eff?.outTime?eff.outTime.replace(/^0/,""):""}</span>
-                              </div>
-                            )}
-                          </td>
-                        );
-                      })}
-                      {/* 合計 */}
-                      <td style={{
-                        textAlign:"center",fontFamily:"monospace",fontWeight:900,
-                        fontSize:"7.5pt",color:"#000",background:"#e8e8e8",
-                        borderLeft:"1.5pt solid #000",border:"0.5pt solid #555",
-                        padding:"5pt 1pt",
-                      }}>{sm?`${sm.totalH}h`:""}</td>
-                    </tr>
-                  );
-                }),
-              ];
-            })}
-          </tbody>
-        </table>
-      );
-    }
-    function PageHdr({label}){
-      return(
-        <div style={{display:"flex",alignItems:"center",marginBottom:"4pt",borderBottom:"0.5pt solid #ccc",paddingBottom:"3pt"}}>
-          <span style={{flex:1,fontSize:"9.5pt",fontWeight:700,color:"#000"}}>{label}</span>
-          <span style={{flex:1,textAlign:"center",fontSize:"11pt",fontWeight:900,color:"#000",letterSpacing:".05em"}}>HOTEL ELDIA 神戸店</span>
-          <span style={{flex:1,textAlign:"right",fontSize:"6.5pt",color:"#555"}}>出力日: {new Date().toLocaleDateString("ja-JP")}</span>
-        </div>
-      );
-    }
-    const half1=monthDates.slice(0,15);
-    const half2=monthDates.slice(15);
-    const selectedChunks = halfSel==="first"?[half1]:halfSel==="second"?[half2]:[half1,half2];
-    // 選択中の部門ID一覧
-    const selDepts = Object.entries(deptSel).filter(([,v])=>v).map(([k])=>k);
-
-    const printContent=fmt==="weekly-dept"?(
-      // 週表示A4縦（部門別）: 選択部門ごとに1枚
-      <>
-        {selDepts.map(did=>{
-          const dlabel = did==="make"?"メイク":did==="kitchen"?"キッチン":"フロント";
-          return(
-            <div key={did} style={{width:"210mm",minHeight:"297mm",padding:"7mm",background:"#fff",pageBreakAfter:"always",boxSizing:"border-box",fontFamily:"var(--font)"}}>
-              <PageHdr label={`${weekDates[0].getFullYear()}年 シフト表　${dlabel}　${weekLabel}`}/>
-              <PT dates={weekDates} deptIds={[did]}/>
-            </div>
-          );
-        })}
-      </>
-    ):fmt==="monthly-dept-v"?(
-      // 月表示A4縦（部門別）: 選択部門ごと × 半月
-      <>
-        {selDepts.map(did=>{
-          const dlabel = did==="make"?"メイク":did==="kitchen"?"キッチン":"フロント";
-          return selectedChunks.map((chunk,ci)=>(
-            <div key={`${did}-${ci}`} style={{width:"210mm",minHeight:"297mm",padding:"7mm",background:"#fff",pageBreakAfter:"always",boxSizing:"border-box",fontFamily:"var(--font)"}}>
-              <PageHdr label={`${year}年 ${month+1}月 シフト表　${dlabel}　${chunk[0].getDate()}日〜${chunk[chunk.length-1].getDate()}日`}/>
-              <PT dates={chunk} deptIds={[did]}/>
-            </div>
-          ));
-        })}
-      </>
-    ):fmt==="monthly-makekitchen"?(
-      // 月表示A4縦（メイク・厨房まとめ）: 半月ずつ
-      <>
-        {selectedChunks.map((chunk,ci)=>(
-          <div key={ci} style={{width:"210mm",minHeight:"297mm",padding:"7mm",background:"#fff",pageBreakAfter:"always",boxSizing:"border-box",fontFamily:"var(--font)"}}>
-            <PageHdr label={`${year}年 ${month+1}月 シフト表　メイク・キッチン　${chunk[0].getDate()}日〜${chunk[chunk.length-1].getDate()}日`}/>
-            <PT dates={chunk} deptIds={["make","kitchen"]}/>
-          </div>
-        ))}
-      </>
-    ):fmt==="monthly-front-ls"?(
-      // 月表示A4横（フロントのみ 上=前半・下=後半 1枚）
-      <div style={{width:"297mm",minHeight:"210mm",padding:"6mm",background:"#fff",boxSizing:"border-box",fontFamily:"var(--font)"}}>
-        <PageHdr label={`${year}年 ${month+1}月 シフト表　フロント`}/>
-        <div style={{marginBottom:"4pt",fontSize:"7pt",fontWeight:700,color:"#555"}}>前半（1〜{half1[half1.length-1].getDate()}日）</div>
-        <PT dates={half1} deptIds={["front"]}/>
-        <div style={{marginTop:"6pt",marginBottom:"4pt",fontSize:"7pt",fontWeight:700,color:"#555",borderTop:"0.5pt solid #ccc",paddingTop:"4pt"}}>後半（{half2[0].getDate()}〜{half2[half2.length-1].getDate()}日）</div>
-        <PT dates={half2} deptIds={["front"]}/>
-      </div>
-    ):(
-      // weekly-landscape fallback
-      <div style={{width:"297mm",minHeight:"210mm",padding:"6mm",background:"#fff",boxSizing:"border-box",fontFamily:"var(--font)"}}>
-        <div style={{display:"flex",alignItems:"center",marginBottom:"4pt",borderBottom:"0.5pt solid #ccc",paddingBottom:"3pt"}}>
-          <span style={{flex:1,fontSize:"9.5pt",fontWeight:700,color:"#000"}}>{weekDates[0].getFullYear()}年 シフト表　{weekLabel}</span>
-          <span style={{flex:1,textAlign:"center",fontSize:"10pt",fontWeight:900,color:"#000",letterSpacing:".05em"}}>HOTEL ELDIA 神戸店</span>
-          <span style={{flex:1,textAlign:"right",fontSize:"6.5pt",color:"#555"}}>出力日: {new Date().toLocaleDateString("ja-JP")}</span>
-        </div>
-        <PT dates={weekDates} deptIds={selDepts}/>
-      </div>
-    );
-    const SW=isLS?297:210; const SH=isLS?210:297; const SC=isLS?0.38:0.45;
-    return(
-      <>
-        <div id="__pw__" style={{display:"none",fontFamily:"var(--font)"}}>
-          <style>{`@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@300;400;500;700&family=DM+Sans:wght@400;600;700&display=swap');*{box-sizing:border-box;margin:0;padding:0}table{border-collapse:collapse}`}</style>
-          {printContent}
-        </div>
-        {pdfRender&&<div ref={pdfRef} aria-hidden="true" style={{position:"fixed",left:-30000,top:0,background:"#fff",fontFamily:"var(--font)"}}>{printContent}</div>}
-        {share.qr&&share.url&&(
-          <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.55)",zIndex:9600,display:"flex",alignItems:"center",justifyContent:"center"}} onClick={e=>{if(e.target===e.currentTarget)setShare(p=>({...p,qr:false}));}}>
-            <div role="dialog" aria-label="QRコード" style={{background:"#fff",borderRadius:14,padding:24,width:360,maxWidth:"92vw",textAlign:"center",boxShadow:"0 20px 60px rgba(0,0,0,.35)"}}>
-              <div style={{fontWeight:700,fontSize:16,marginBottom:4}}>{shareTitle}</div>
-              <div style={{fontSize:12.5,color:"var(--muted)",marginBottom:12}}>スマホのカメラで読み取ると、PDFで開きます（{share.expires}まで）</div>
-              <div style={{width:280,height:280,margin:"0 auto"}} dangerouslySetInnerHTML={{__html:qrSvg(share.url)}}/>
-              <div style={{fontSize:11,color:"var(--muted)",wordBreak:"break-all",margin:"10px 0 14px"}}>{share.url}</div>
-              <button className="btn sec" onClick={()=>setShare(p=>({...p,qr:false}))}>閉じる</button>
-            </div>
-          </div>
-        )}
-        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.5)",zIndex:9000,display:"flex",alignItems:"center",justifyContent:"center"}} onClick={e=>{if(e.target===e.currentTarget)onClose();}}>
-          <div style={{background:"#fff",borderRadius:14,padding:24,width:660,maxWidth:"95vw",maxHeight:"90vh",overflow:"auto",boxShadow:"0 20px 60px rgba(0,0,0,.3)"}}>
-            <div style={{display:"flex",alignItems:"center",marginBottom:20}}>
-              <div style={{fontWeight:700,fontSize:16,color:"var(--ink)"}}>🖨 印刷・PDF出力</div>
-              <button onClick={onClose} style={{marginLeft:"auto",background:"none",border:"none",fontSize:20,color:"#94a3b8",cursor:"pointer"}}>×</button>
-            </div>
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:16}}>
-              {[
-                ["weekly-dept",    "📄","週表示 A4縦（部門別）",  "選択部門ごとに1枚"],
-                ["monthly-dept-v", "📄","月表示 A4縦（部門別）",  "選択部門×半月"],
-                ["monthly-makekitchen","📄","月表示 A4縦（メイク・厨房）","2部門まとめて半月×2枚"],
-                ["monthly-front-ls","📋","月表示 A4横（フロント）", "上=前半・下=後半 1枚"],
-              ].map(([v,ic,l,s])=>(
-                <button key={v} onClick={()=>setFmt(v)} style={{padding:"10px 12px",borderRadius:8,cursor:"pointer",fontFamily:"var(--font)",fontSize:12.5,fontWeight:700,border:`2px solid ${fmt===v?"var(--pri)":"var(--line)"}`,background:fmt===v?"#fffbf0":"#fff",color:fmt===v?"var(--ink)":"#64748b",display:"flex",alignItems:"center",gap:8,textAlign:"left"}}>
-                  <span style={{fontSize:22}}>{ic}</span>
-                  <div><div>{l}</div><div style={{fontSize:10,fontWeight:400,color:"#94a3b8"}}>{s}</div></div>
-                </button>
-              ))}
-            </div>
-            <div style={{background:"#e2e8f0",borderRadius:8,padding:12,marginBottom:20}}>
-              <div style={{fontSize:11,color:"#64748b",fontWeight:600,marginBottom:8}}>プレビュー</div>
-              <div style={{overflow:"hidden",height:SH*SC,width:SW*SC,border:"1px solid #cbd5e1",borderRadius:3,background:"#fff"}}>
-                <div style={{width:SW,height:SH,transform:`scale(${SC})`,transformOrigin:"top left",fontFamily:"var(--font)",pointerEvents:"none"}}>{printContent}</div>
-              </div>
-            </div>
-            {/* 部門選択 */}
-            {(fmt==="weekly-dept"||fmt==="monthly-dept-v")&&(
-              <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12,padding:"10px 14px",background:"var(--surf2)",borderRadius:8,border:"1px solid #e2e8f0"}}>
-                <span style={{fontSize:12.5,fontWeight:700,color:"var(--ink)",flexShrink:0}}>部門選択：</span>
-                <div style={{display:"flex",gap:6}}>
-                  {[["make","メイク"],["kitchen","キッチン"],["front","フロント"]].map(([id,label])=>(
-                    <button key={id} onClick={()=>setDeptSel(p=>({...p,[id]:!p[id]}))} style={{
-                      padding:"5px 12px",borderRadius:7,cursor:"pointer",
-                      border:`1.5px solid ${deptSel[id]?"var(--ink)":"var(--line)"}`,
-                      background:deptSel[id]?"var(--ink)":"#fff",
-                      color:deptSel[id]?"#fff":"#475569",
-                      fontSize:12,fontWeight:deptSel[id]?700:400,
-                      fontFamily:"var(--font)",transition:"all .15s",
-                    }}>{label}</button>
-                  ))}
-                </div>
-              </div>
-            )}
-            {/* 月表示の前半/後半セレクター */}
-            {(fmt.includes("monthly")&&fmt!=="monthly-front-ls")&&(
-              <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12,padding:"10px 14px",background:"var(--surf2)",borderRadius:8,border:"1px solid #e2e8f0"}}>
-                <span style={{fontSize:12.5,fontWeight:700,color:"var(--ink)",flexShrink:0}}>印刷範囲：</span>
-                <div style={{display:"flex",gap:6}}>
-                  {[["both","前半+後半（両方）"],["first","前半のみ（1〜15日）"],["second","後半のみ（16日〜末日）"]].map(([v,l])=>(
-                    <button key={v} onClick={()=>setHalfSel(v)} style={{
-                      padding:"5px 12px",borderRadius:7,cursor:"pointer",
-                      border:`1.5px solid ${halfSel===v?"var(--ink)":"var(--line)"}`,
-                      background:halfSel===v?"var(--ink)":"#fff",
-                      color:halfSel===v?"#fff":"#475569",
-                      fontSize:12,fontWeight:halfSel===v?700:400,
-                      fontFamily:"var(--font)",transition:"all .15s",
-                    }}>{l}</button>
-                  ))}
-                </div>
-              </div>
-            )}
-            {/* 共有 */}
-            <div style={{border:"1px solid var(--line)",borderRadius:10,padding:"12px 14px",marginBottom:14}}>
-              <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
-                <span style={{fontSize:13,fontWeight:700,marginRight:4}}>共有</span>
-                <button className="btn sec sm" disabled={!!share.busy} onClick={shareQR}>QRコード</button>
-                <button className="btn sec sm" disabled={!!share.busy} onClick={shareLINE}>LINE</button>
-                <button className="btn sec sm" disabled={!!share.busy} onClick={shareMail}>メール</button>
-                <button className="btn sec sm" disabled={!!share.busy} onClick={shareCopy}>{share.copied&&share.key===shareKey?"コピーしました":"リンクをコピー"}</button>
-                <button className="btn sec sm" disabled={!!share.busy} onClick={savePdf}>PDFを保存</button>
-              </div>
-              <div style={{fontSize:12,marginTop:8,color:share.error?"var(--sun)":"var(--muted)",lineHeight:1.6}}>
-                {share.busy||share.error||(share.url&&share.key===shareKey
-                  ?`共有リンクを作成済み（${share.expires}まで有効）。内容を変えたら、もう一度押すと新しいリンクになります。`
-                  :"上で選んだ形式のシフト表をPDFにして共有します。リンクは約2か月で開けなくなります。")}
-              </div>
-            </div>
-            <div style={{background:"var(--surf2)",borderRadius:8,padding:"10px 14px",marginBottom:20,fontSize:12,color:"#475569",lineHeight:1.8}}>
-              <strong style={{color:"var(--ink)"}}>印刷のヒント</strong><br/>・余白「なし」推奨　・「背景グラフィックを印刷する」ON
-            </div>
-            <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
-              <button onClick={onClose} style={{background:"#fff",color:"var(--ink)",border:"1.5px solid var(--line)",padding:"9px 20px",borderRadius:8,fontSize:13,cursor:"pointer",fontFamily:"var(--font)"}}>キャンセル</button>
-              <button onClick={doPrint} style={{background:"var(--pri)",color:"#fff",border:"none",padding:"9px 24px",borderRadius:8,fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"var(--font)"}}>🖨 印刷 / PDF保存</button>
-            </div>
-          </div>
-        </div>
-      </>
-    );
-  }
 
   // ─── Render ────────────────────────────────────────────────────────────────
   return (
@@ -3129,7 +3238,7 @@ ${pw.innerHTML}
                       const pl=calcPaidLeaveGrant(s.joinDate,wDays||null,wHours||null);
                       if(!pl) return null;
                       // 今期付与開始日を算出（最後に付与が発生した月数しきい値の日）
-                      const join=new Date(s.joinDate);
+                      const join=parseYmd(s.joinDate);
                       const today=new Date();
                       let mons=(today.getFullYear()-join.getFullYear())*12+(today.getMonth()-join.getMonth());
                       if(today.getDate()<join.getDate()) mons--;
@@ -3140,8 +3249,8 @@ ${pw.innerHTML}
                       fromDate.setMonth(fromDate.getMonth()+threshMons);
                       const fromStr=ymd(fromDate);
                       // 選択月の末日までを集計範囲とする
-                      const lastDay=getDays(year,month-1);
-                      const toStr=`${year}-${String(month).padStart(2,'0')}-${String(lastDay).padStart(2,'0')}`;
+                      // （month は 0始まり。以前は前月末になっており、1月は「YYYY-00-31」と壊れていた）
+                      const toStr=ymd(new Date(year,month,getDays(year,month)));
                       // cellDataからoff2の付与期間内累積使用数を集計
                       const prefix=`${s.id}|`;
                       let totalUsed=0;
